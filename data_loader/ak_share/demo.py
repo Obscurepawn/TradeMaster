@@ -167,7 +167,7 @@ if __name__ == "__main__":
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"stock_data/AShareData_{timestamp}.csv"
 
-        # 保存文件
+        # save files
         all_data.to_csv(filename, index=False, encoding="utf_8_sig")
         print(f"file_saved_path={filename}")
         print(f"total_records_num={len(all_data)}")
