@@ -71,8 +71,10 @@ def get_zh_a_stock_history(
     start_date: str,
     end_date: str,
     retry_times: int = 3,
+    sleep_seconds: float = 0.2,
 ) -> pd.DataFrame:
     for retry_time in range(retry_times):
+        time.sleep(sleep_seconds)
         try:
             df = ak.stock_zh_a_hist(
                 symbol=symbol,
@@ -94,6 +96,8 @@ def get_zh_a_stock_history(
             print(
                 f"fail to get stock historical data. code={symbol},name={name}, retry_time={retry_time}. err={str(e)}"
             )
+            continue
+    raise Exception(f"failed to get stock historical data after max retries. code={symbol}, name={name}, retry_time={retry_times}.")
 
 
 def get_zh_a_stock_histories(
@@ -117,6 +121,7 @@ def get_zh_a_stock_histories(
                     start_date=start_date,
                     end_date=end_date,
                     retry_times=retry_times,
+                    sleep_seconds=sleep_seconds,
                 )
                 if df is not None:
                     collector = pd.concat([collector, df], ignore_index=True)
@@ -128,8 +133,6 @@ def get_zh_a_stock_histories(
                         f"skip. symbol={symbol}_name={name} fetch nothing"
                     )
                 pbar.update(1)
-
-                time.sleep(sleep_seconds)
             except Exception as e:
                 print(
                     f"fail to get stock historical data. code={symbol}, name={name}, retry_times={retry_times}. err={str(e)}"
@@ -140,9 +143,9 @@ def get_zh_a_stock_histories(
 
 if __name__ == "__main__":
     start_date = "20230807"
-    end_date = "20250807"
-    retry_times = 3
-    sleep_seconds = 1
+    end_date = "20250811"
+    retry_times = 32
+    sleep_seconds = 3
 
     stock_list = get_zh_a_stock_list()
     print(f"len(stock_list)={len(stock_list)}")
