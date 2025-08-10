@@ -97,7 +97,9 @@ def get_zh_a_stock_history(
                 f"fail to get stock historical data. code={symbol},name={name}, retry_time={retry_time}. err={str(e)}"
             )
             continue
-    raise Exception(f"failed to get stock historical data after max retries. code={symbol}, name={name}, retry_time={retry_times}.")
+    raise Exception(
+        f"failed to get stock historical data after max retries. code={symbol}, name={name}, retry_time={retry_times}."
+    )
 
 
 def get_zh_a_stock_histories(
@@ -148,7 +150,7 @@ if __name__ == "__main__":
     sleep_seconds = 3
 
     stock_list = get_zh_a_stock_list()
-    print(f"len(stock_list)={len(stock_list)}")
+    print(f"stock_list={stock_list}")
 
     all_data = get_zh_a_stock_histories(
         stock_list=stock_list,
