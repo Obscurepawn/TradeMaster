@@ -128,11 +128,12 @@ def get_zh_a_stock_histories(
                 if df is not None:
                     collector = pd.concat([collector, df], ignore_index=True)
                     pbar.set_description(
-                        f"fetch data successfully. symbol={symbol}_name={name}..."
+                        f"fetch data successfully. symbol={symbol}_name={name}...",
+                        False,
                     )
                 else:
                     pbar.set_description(
-                        f"skip. symbol={symbol}_name={name} fetch nothing"
+                        f"skip. symbol={symbol}_name={name} fetch nothing", False
                     )
                 pbar.update(1)
             except Exception as e:
@@ -146,11 +147,11 @@ def get_zh_a_stock_histories(
 if __name__ == "__main__":
     start_date = "20230807"
     end_date = "20250811"
-    retry_times = 32
+    retry_times = 2**31 - 1
     sleep_seconds = 3
 
     stock_list = get_zh_a_stock_list()
-    print(f"stock_list={stock_list}")
+    print(f"stock_list=\n{stock_list}")
 
     all_data = get_zh_a_stock_histories(
         stock_list=stock_list,
