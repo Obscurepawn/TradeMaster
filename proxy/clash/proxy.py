@@ -3,8 +3,17 @@ import requests
 import random
 import yaml
 
+# Import logger module
+import sys
+import os
 
-DEFAULT_CONFIG_PATH = "/mnt/c/Users/10255/.config/clash/config.yaml"
+sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+from logger.logger import get_logger
+
+# Create logger instance
+logger = get_logger(__name__)
+
+
 LOCAL_HOST = "localhost"
 DEFAULT_PORT = 9090
 DEFAULT_SECRET = ""
@@ -25,13 +34,15 @@ class ClashConfigParser:
                 host = controller
                 port = 9090
             secret = config.get("secret", "")
-            print(f"param from config_file. host={host}, port={port}, secret={secret}")
+            logger.info(
+                f"Parameters from config file. host={host}, port={port}, secret={secret}"
+            )
             return LOCAL_HOST, port, secret  # only support localhost for now
         except FileNotFoundError as e:
-            print(f"file not file. config_path={config_path}")
+            logger.error(f"File not found. config_path={config_path}")
             raise e
         except Exception as e:
-            print(f"fail to parse config. err={str(e)}")
+            logger.error(f"Failed to parse config. err={str(e)}")
             raise e
 
 
@@ -46,21 +57,21 @@ class ClashController:
             response = requests.get(url, headers=self.headers, timeout=5)
             response.raise_for_status()
             return response.json().get("proxies", {})
-        except requests.exceptions.RequestException as e:
-            print(f"fail to request. err={e}")
+        except Exception as e:  # Catch all exceptions, not just RequestException
+            logger.error(f"Failed to make request. err={e}")
             return {}
 
     def get_available_nodes(self, group_name: str) -> list:
         proxies = self.get_proxies()
-        print(f"proxies={proxies}")
+        logger.debug(f"proxies={proxies}")
         group = proxies.get(group_name)
 
         if not group:
-            print(f"'{group_name}' not found in proxies")
+            logger.warning(f"'{group_name}' not found in proxies")
             return []
 
         if group["type"] != "Selector":
-            print(f"'{group_name}' is not a proxy group")
+            logger.warning(f"'{group_name}' is not a proxy group")
             return []
 
         return group.get("all", [])
@@ -72,35 +83,41 @@ class ClashController:
         try:
             response = requests.put(url, json=data, headers=self.headers, timeout=5)
             if response.status_code == 204:
-                print(f"successfully switch to {node_name}")
+                logger.info(f"Successfully switched to {node_name}")
                 return True
-            print(
-                f"fail to switch proxy ip. code={response.status_code}. err_msg={response.text}"
+            logger.error(
+                f"Failed to switch proxy IP. code={response.status_code}. err_msg={response.text}"
             )
         except requests.exceptions.RequestException as e:
-            print(
-                f"fail to request. err={e}. group_name={group_name}, node_name={node_name}"
+            logger.error(
+                f"Failed to make request. err={e}. group_name={group_name}, node_name={node_name}"
             )
             raise e
 
     def change_random_proxy(self, group_name=GLOBAL):
         nodes = self.get_available_nodes(group_name)
         if not nodes:
-            print("no available nodes found")
+            logger.warning("No available nodes found")
             return False
 
         filtered_nodes = [n for n in nodes if n != group_name and n != "DIRECT"]
 
         if not filtered_nodes:
-            print("no available nodes to switch to")
+            logger.warning("No available nodes to switch to")
             return False
 
         selected = random.choice(filtered_nodes)
-        print(f"random_selected_proxy={selected}")
+        logger.info(f"random_selected_proxy={selected}")
         self.switch_proxy(group_name, selected)
 
 
 if __name__ == "__main__":
-    host, port, secret = ClashConfigParser.parse_config(DEFAULT_CONFIG_PATH)
+    import sys
+    import os
+    sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+    from config.config_loader import get_config_value
+
+    config_path = get_config_value("clash.config_path")
+    host, port, secret = ClashConfigParser.parse_config(config_path)
     controller = ClashController("localhost", port, secret)
     controller.change_random_proxy(GLOBAL)
