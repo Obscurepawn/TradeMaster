@@ -76,32 +76,25 @@ class AkshareDataLoader(DataLoader):
             logger.error(f"Failed to get profile info for stock {symbol}: {str(e)}")
             raise
 
-    def get_stock_history(self, symbol: str, **kwargs) -> Optional[pd.DataFrame]:
+    def get_stock_history(self, symbol: str, name: str = "", period: str = "daily",
+                         adjust: str = "qfq", start_date: str = "", end_date: str = "",
+                         retry_times: int = 3, sleep_seconds: float = 0.2) -> Optional[pd.DataFrame]:
         """
         Get historical data for a single stock
 
         Args:
             symbol (str): Stock symbol
-            **kwargs: Other parameters, including:
-                - name (str): Stock name
-                - period (str): Period
-                - adjust (str): Adjustment type
-                - start_date (str): Start date
-                - end_date (str): End date
-                - retry_times (int): Retry times, default 3
-                - sleep_seconds (float): Sleep seconds, default 0.2
+            name (str): Stock name
+            period (str): Period, default is "daily", options are "daily", "weekly", "monthly"
+            adjust (str): Adjustment type, default is "qfq", options are "qfq", "hfq", "none"
+            start_date (str): Start date, format "YYYYMMDD"
+            end_date (str): End date, format "YYYYMMDD"
+            retry_times (int): Retry times, default 3
+            sleep_seconds (float): Sleep seconds between requests, default 0.2
 
         Returns:
             Optional[pd.DataFrame]: Stock historical data, returns None if failed to retrieve
         """
-        # Extract parameters
-        name = kwargs.get("name", "")
-        period = kwargs.get("period", "daily")
-        adjust = kwargs.get("adjust", "qfq")
-        start_date = kwargs.get("start_date", "")
-        end_date = kwargs.get("end_date", "")
-        retry_times = kwargs.get("retry_times", 3)
-        sleep_seconds = kwargs.get("sleep_seconds", 0.2)
 
         for retry_time in range(retry_times):
             # Add randomization to sleep time (±20%)
@@ -109,17 +102,13 @@ class AkshareDataLoader(DataLoader):
             time.sleep(random_sleep)
 
             try:
-                # Use request hook context to set a random User-Agent for this request
-                with RequestHookContext() as ctx:
-                    logger.debug(f"Using User-Agent: {ctx.user_agent}")
-
-                    df = ak.stock_zh_a_hist(
-                        symbol=symbol,
-                        period=period,
-                        start_date=start_date,
-                        end_date=end_date,
-                        adjust=adjust,
-                    )
+                df = ak.stock_zh_a_hist(
+                    symbol=symbol,
+                    period=period,
+                    start_date=start_date,
+                    end_date=end_date,
+                    adjust=adjust,
+                )
                 if df.empty:
                     logger.warning(
                         f"Unable to find historical data for this stock. code={symbol}, name={name}. Skipping."
@@ -138,29 +127,21 @@ class AkshareDataLoader(DataLoader):
             f"Failed to get stock historical data after max retries. code={symbol}, name={name}, retry_time={retry_times}."
         )
 
-    def get_stock_histories(self, stock_list: pd.DataFrame, **kwargs) -> None:
+    def get_stock_histories(self, stock_list: pd.DataFrame, period: str = "daily",
+                           adjust: str = "qfq", start_date: str = "", end_date: str = "",
+                           retry_times: int = 3, sleep_seconds: float = 0.2) -> None:
         """
         Get historical data for multiple stocks
 
         Args:
             stock_list (pd.DataFrame): Stock list
-            **kwargs: Other parameters, including:
-                - period (str): Period
-                - adjust (str): Adjustment type
-                - start_date (str): Start date
-                - end_date (str): End date
-                - retry_times (int): Retry times, default 3
-                - sleep_seconds (float): Sleep seconds, default 0.2
-                - proxy_controller: Proxy controller
+            period (str): Period, default is "daily", options are "daily", "weekly", "monthly"
+            adjust (str): Adjustment type, default is "qfq", options are "qfq", "hfq", "none"
+            start_date (str): Start date, format "YYYYMMDD"
+            end_date (str): End date, format "YYYYMMDD"
+            retry_times (int): Retry times, default 3
+            sleep_seconds (float): Sleep seconds between requests, default 0.2
         """
-        # Extract parameters
-        period = kwargs.get("period", "daily")
-        adjust = kwargs.get("adjust", "qfq")
-        start_date = kwargs.get("start_date", "")
-        end_date = kwargs.get("end_date", "")
-        retry_times = kwargs.get("retry_times", 3)
-        sleep_seconds = kwargs.get("sleep_seconds", 0.2)
-        proxy_controller = kwargs.get("proxy_controller", None)
 
         # Ensure stock_data directory exists
         stock_data_path = get_config().get("data_storage.stock_data_path", "stock_data")
@@ -201,13 +182,6 @@ class AkshareDataLoader(DataLoader):
                             f"Data fetched successfully. symbol={symbol}_name={name}...",
                             False,
                         )
-
-                        # Change proxy IP after successfully fetching data
-                        if proxy_controller is not None:
-                            try:
-                                proxy_controller.change_random_proxy()
-                            except Exception as e:
-                                logger.error(f"Failed to change proxy IP: {e}")
                     else:
                         pbar.set_description(
                             f"Skipped. symbol={symbol}_name={name} fetched nothing",

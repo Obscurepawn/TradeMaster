@@ -26,9 +26,6 @@ import data_loader.ak_share.constant as constant
 
 def main():
     """Main function to demonstrate stock data loading"""
-    # Install HTTP request hooks
-    from utils.request_hook import install_hooks
-    install_hooks()
 
     # Initialize configuration loader with examples config
     init_config_loader("examples/config/config.yaml")
@@ -60,6 +57,10 @@ def main():
     stock_list = stock_list.head(stock_limit)
     print(f"Stock list:\n{stock_list}")
 
+    # Set proxy controller if available
+    if proxy_controller is not None:
+        data_loader.set_proxy_controller(proxy_controller)
+
     # Generate independent CSV file for each stock
     data_loader.get_stock_histories(
         stock_list=stock_list,
@@ -69,7 +70,6 @@ def main():
         end_date=end_date,
         retry_times=retry_times,
         sleep_seconds=sleep_seconds,
-        proxy_controller=proxy_controller,
     )
 
     print("All stock data saved to individual CSV files in stock_data directory")
