@@ -19,9 +19,11 @@ TradeMaster/
 │   └── __init__.py        # Package initialization
 ├── data_loader/           # Data loading module
 │   ├── ak_share/          # Data loader based on akshare
-│   │   ├── impl.py        # Main data fetching script
-│   │   └── constant.py     # Constant definitions
-│   └── data_loader.py     # Data loader interface
+│   │   ├── akshare_data_loader.py  # Akshare data loader implementation
+│   │   └── constant.py    # Constant definitions
+│   ├── data_loader.py     # Data loader interface (abstract base class)
+│   ├── data_loader_factory.py  # Data loader factory
+│   └── __init__.py        # Package initialization
 ├── logger/                # Logger module
 │   └── logger.py          # Logger utility
 ├── proxy/                 # Proxy module
@@ -47,9 +49,11 @@ pip install -r requirements.txt
 
 ## Usage
 
+### New Interface (Recommended)
+
 ```bash
-cd data_loader/ak_share
-python impl.py
+cd examples/data_loader/ak_share
+python data_loader_example.py
 ```
 
 ## Running Tests
@@ -69,7 +73,7 @@ python -m unittest tests.proxy.test_proxy
 python -m unittest tests.data_loader.ak_share.test_request_hook
 
 # Run data loading module tests
-python -m unittest tests.data_loader.ak_share.test_stock_data_fetcher
+python -m unittest tests.data_loader.ak_share.test_stock_data_loader
 
 # Run logger module tests
 python -m unittest tests.logger.test_logger

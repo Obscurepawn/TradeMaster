@@ -37,16 +37,28 @@ def run_all_tests():
         print(f"Failed to import request hook tests: {e}")
 
     try:
-        from tests.data_loader.ak_share.test_stock_data_fetcher import TestStockDataFetcher
-        suite.addTests(loader.loadTestsFromTestCase(TestStockDataFetcher))
+        from tests.data_loader.ak_share.test_akshare_data_loader import TestStockDataLoader
+        suite.addTests(loader.loadTestsFromTestCase(TestStockDataLoader))
     except ImportError as e:
-        print(f"Failed to import stock data fetcher tests: {e}")
+        print(f"Failed to import stock data loader tests: {e}")
+
+    try:
+        from tests.data_loader.test_data_loader_factory import TestDataReaderFactory
+        suite.addTests(loader.loadTestsFromTestCase(TestDataReaderFactory))
+    except ImportError as e:
+        print(f"Failed to import data loader factory tests: {e}")
 
     try:
         from tests.config.test_config import TestConfigLoader
         suite.addTests(loader.loadTestsFromTestCase(TestConfigLoader))
     except ImportError as e:
         print(f"Failed to import config tests: {e}")
+
+    try:
+        from tests.data_loader.ak_share.test_financial_indicators import TestFinancialIndicators
+        suite.addTests(loader.loadTestsFromTestCase(TestFinancialIndicators))
+    except ImportError as e:
+        print(f"Failed to import financial indicators tests: {e}")
 
     # Run tests
     runner = unittest.TextTestRunner(verbosity=2)

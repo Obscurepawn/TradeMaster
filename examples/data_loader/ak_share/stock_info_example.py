@@ -15,15 +15,15 @@ import os
 # Add project root to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
-from data_loader.ak_share.impl import (
-    get_stock_basic_info,
-    get_stock_profile_info
-)
+from data_loader.data_loader_factory import DataLoaderFactory
 import pandas as pd
 
 
 def main():
     """Main function to demonstrate stock information retrieval"""
+    # Create data loader using factory
+    data_loader = DataLoaderFactory.create_data_loader("akshare")
+
     # Test stock symbol
     symbol = "000001"  # Ping An Bank
     stock_name = "平安银行"
@@ -33,7 +33,7 @@ def main():
     # Get basic information
     print("1. Getting basic stock information...")
     try:
-        basic_info = get_stock_basic_info(symbol)
+        basic_info = data_loader.get_stock_basic_info(symbol)
         print("Basic Information:")
         print(basic_info.to_string(index=False))
         print()
@@ -43,7 +43,7 @@ def main():
     # Get profile information
     print("2. Getting detailed profile information...")
     try:
-        profile_info = get_stock_profile_info(symbol)
+        profile_info = data_loader.get_stock_profile_info(symbol)
         print("Profile Information:")
         # Display key columns
         key_columns = ['公司名称', '英文名称', '证券代码', '行业', '成立日期', '上市日期']

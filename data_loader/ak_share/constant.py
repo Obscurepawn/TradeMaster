@@ -61,6 +61,37 @@ EN_STOCK_ADJUST_QFQ = "qfq"
 EN_STOCK_ADJUST_HFQ = "hfq"
 PERIOD_DAILY = "daily"
 
+# Financial indicators constants
+FINANCIAL_INDICATOR_BY_REPORT = "by_report"
+FINANCIAL_INDICATOR_BY_QUARTER = "by_quarter"
+
+# Shareholder surplus constants
+CASH_FLOW_STATEMENT = "现金流量表"
+INCOME_STATEMENT = "利润表"
+ANNUAL_REPORT = "年报"
+REPORT_DATE = "报表日期"
+CASH_FLOW_OPS = "经营活动产生的现金流量净额"
+CAPITAL_EXPENDITURE = "购建固定资产、无形资产和其他长期资产支付的现金"
+ASSET_IMPAIRMENT = "资产减值准备"
+DEPRECIATION = "固定资产折旧、油气资产折耗、生产性生物资产折旧"
+NET_PROFIT = "净利润"
+
+# Shareholder surplus valuation constants
+VALUATION_INDICATOR_TOTAL_MARKET_CAP = "total_market_cap"
+VALUATION_INDICATOR_PE_TTM = "pe_ttm"
+VALUATION_INDICATOR_PE_STATIC = "pe_static"
+VALUATION_INDICATOR_PB = "pb"
+VALUATION_INDICATOR_PC = "pc"
+
+VALUATION_PERIOD_1Y = "1y"
+VALUATION_PERIOD_3Y = "3y"
+VALUATION_PERIOD_5Y = "5y"
+VALUATION_PERIOD_10Y = "10y"
+VALUATION_PERIOD_ALL = "all"
+
+# Data loader types
+DATA_LOADER_AKSHARE = "akshare"
+
 RENAME_DICT = {
     CN_CODE: EN_CODE,
     CN_NAME: EN_NAME,

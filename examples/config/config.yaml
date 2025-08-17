@@ -9,10 +9,10 @@ clash:
 
 # Data fetching configuration
 data_fetching:
-  start_date: "20230807"
-  end_date: "20250811"
+  start_date: "20100818"
+  end_date: "20250818"
   retry_times: 2147483647  # 2**31 - 1
-  sleep_seconds: 3
+  sleep_seconds: 1.5
   stock_limit: 10  # For testing purposes, only use the first N stocks
 
 # Logging configuration
