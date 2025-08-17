@@ -9,16 +9,6 @@ The data loader module provides a unified interface for loading stock data from 
 ### DataLoader (Abstract Base Class)
 Base class for all data loaders, defining a unified interface.
 
-#### Methods
-- `get_stock_list()` - Get stock list
-- `get_stock_basic_info(symbol)` - Get basic stock information
-- `get_stock_profile_info(symbol)` - Get stock profile information
-- `get_stock_history(symbol, **kwargs)` - Get historical data for a single stock
-- `get_stock_histories(stock_list, **kwargs)` - Get historical data for multiple stocks
-- `calculate_technical_indicators(df)` - Calculate technical indicators
-- `get_financial_indicators(symbol, indicator)` - Get financial indicators for a stock
-- `get_shareholder_surplus(symbol)` - Get shareholder surplus data
-
 ### AkshareDataLoader (DataLoader subclass)
 Data loader implementation based on the Akshare library.
 

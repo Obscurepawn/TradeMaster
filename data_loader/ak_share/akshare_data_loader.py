@@ -57,25 +57,6 @@ class AkshareDataLoader(DataLoader):
             logger.error(f"Failed to get basic info for stock {symbol}: {str(e)}")
             raise
 
-    def get_stock_profile_info(self, symbol: str) -> pd.DataFrame:
-        """
-        Get stock profile information
-
-        Args:
-            symbol (str): Stock symbol
-
-        Returns:
-            pd.DataFrame: Stock profile information
-        """
-        try:
-            # Get profile information from CNINFO
-            profile_info = ak.stock_profile_cninfo(symbol=symbol)
-            logger.info(f"Retrieved profile info for stock {symbol}")
-            return profile_info
-        except Exception as e:
-            logger.error(f"Failed to get profile info for stock {symbol}: {str(e)}")
-            raise
-
     def get_stock_history(self, symbol: str, name: str = "", period: str = "daily",
                          adjust: str = "qfq", start_date: str = "", end_date: str = "",
                          retry_times: int = 3, sleep_seconds: float = 0.2) -> Optional[pd.DataFrame]:
