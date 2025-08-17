@@ -8,9 +8,12 @@ import sys
 import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
+from config.config_loader import init_config_loader, get_config
 from logger.logger import get_logger
 
 # Create logger instance
+# Initialize configuration loader with default config before creating logger
+init_config_loader("config/config.yaml")
 logger = get_logger(__name__)
 
 
@@ -37,6 +40,7 @@ class ClashConfigParser:
             logger.info(
                 f"Parameters from config file. host={host}, port={port}, secret={secret}"
             )
+            return LOCAL_HOST, port, secret  # only support localhost for now
             return LOCAL_HOST, port, secret  # only support localhost for now
         except FileNotFoundError as e:
             logger.error(f"File not found. config_path={config_path}")
@@ -109,15 +113,3 @@ class ClashController:
         selected = random.choice(filtered_nodes)
         logger.info(f"random_selected_proxy={selected}")
         self.switch_proxy(group_name, selected)
-
-
-if __name__ == "__main__":
-    import sys
-    import os
-    sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-    from config.config_loader import get_config_value
-
-    config_path = get_config_value("clash.config_path")
-    host, port, secret = ClashConfigParser.parse_config(config_path)
-    controller = ClashController("localhost", port, secret)
-    controller.change_random_proxy(GLOBAL)

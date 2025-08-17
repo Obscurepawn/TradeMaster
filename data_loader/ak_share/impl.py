@@ -4,7 +4,7 @@ import numpy as np
 from datetime import datetime
 
 from tqdm import tqdm
-import constant
+from . import constant
 import time
 import os
 
@@ -25,7 +25,7 @@ from utils.request_hook import install_hooks, RequestHookContext, get_random_use
 
 # Import config module
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
-from config.config_loader import get_config_value
+from config.config_loader import get_config
 
 # Create logger instance
 logger = get_logger(__name__)
@@ -85,6 +85,46 @@ def get_zh_a_stock_list():
     return stock_info
 
 
+def get_stock_basic_info(symbol: str) -> pd.DataFrame:
+    """
+    Get basic information for a Chinese A-share stock
+
+    Args:
+        symbol: Stock symbol (e.g., '000001')
+
+    Returns:
+        DataFrame with basic stock information
+    """
+    try:
+        # Get basic information from EastMoney
+        basic_info = ak.stock_individual_info_em(symbol=symbol)
+        logger.info(f"Retrieved basic info for stock {symbol}")
+        return basic_info
+    except Exception as e:
+        logger.error(f"Failed to get basic info for stock {symbol}: {str(e)}")
+        raise
+
+
+def get_stock_profile_info(symbol: str) -> pd.DataFrame:
+    """
+    Get profile information for a Chinese A-share stock from CNINFO
+
+    Args:
+        symbol: Stock symbol (e.g., '000001')
+
+    Returns:
+        DataFrame with profile information
+    """
+    try:
+        # Get profile information from CNINFO
+        profile_info = ak.stock_profile_cninfo(symbol=symbol)
+        logger.info(f"Retrieved profile info for stock {symbol}")
+        return profile_info
+    except Exception as e:
+        logger.error(f"Failed to get profile info for stock {symbol}: {str(e)}")
+        raise
+
+
 def get_zh_a_stock_history(
     symbol: str,
     name: str,
@@ -142,7 +182,7 @@ def get_zh_a_stock_histories(
     proxy_controller = None,
 ):
     # Ensure stock_data directory exists
-    stock_data_path = get_config_value("data_storage.stock_data_path", "stock_data")
+    stock_data_path = get_config().get("data_storage.stock_data_path", "stock_data")
     os.makedirs(stock_data_path, exist_ok=True)
 
     with tqdm(total=len(stock_list), desc="Fetching stock historical data") as pbar:
@@ -189,49 +229,3 @@ def get_zh_a_stock_histories(
                     f"Failed to get stock historical data. code={symbol}, name={name}, retry_times={retry_times}. err={str(e)}"
                 )
                 continue
-
-
-if __name__ == "__main__":
-    # Install HTTP request hooks
-    install_hooks()
-
-    # Load configuration
-    start_date = get_config_value("data_fetching.start_date")
-    end_date = get_config_value("data_fetching.end_date")
-    retry_times = get_config_value("data_fetching.retry_times")
-    sleep_seconds = get_config_value("data_fetching.sleep_seconds")
-    stock_limit = get_config_value("data_fetching.stock_limit")
-
-    # Initialize proxy controller
-    try:
-        config_path = get_config_value("clash.config_path")
-        host = get_config_value("clash.host")
-        port = get_config_value("clash.port")
-        secret = get_config_value("clash.secret")
-
-        # Parse config file to get actual host, port, and secret
-        host, port, secret = ClashConfigParser.parse_config(config_path)
-        proxy_controller = ClashController(host, port, secret)
-        logger.info("Proxy controller initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize proxy controller: {e}")
-        proxy_controller = None
-
-    stock_list = get_zh_a_stock_list()
-    # For testing purposes, only use the first N stocks
-    stock_list = stock_list.head(stock_limit)
-    logger.info(f"stock_list=\n{stock_list}")
-
-    # Generate independent CSV file for each stock
-    get_zh_a_stock_histories(
-        stock_list=stock_list,
-        period=constant.PERIOD_DAILY,
-        adjust=constant.EN_STOCK_ADJUST_QFQ,
-        start_date=start_date,
-        end_date=end_date,
-        retry_times=retry_times,
-        sleep_seconds=sleep_seconds,
-        proxy_controller=proxy_controller,
-    )
-
-    logger.info("All stock data saved to individual CSV files in stock_data directory")

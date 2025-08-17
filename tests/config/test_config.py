@@ -11,7 +11,7 @@ import yaml
 # Add project root to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-from config.config_loader import ConfigLoader, get_config_loader, get_config_value
+from config.config_loader import ConfigLoader, init_config_loader, get_config
 
 
 class TestConfigLoader(unittest.TestCase):
@@ -49,10 +49,11 @@ class TestConfigLoader(unittest.TestCase):
         self.assertIsInstance(loader, ConfigLoader)
         self.assertEqual(loader.config_path, self.temp_file.name)
 
-    def test_config_loader_default_path(self):
-        """Test ConfigLoader with default path"""
-        # This test will fail if the default config file doesn't exist, which is expected in test environment
-        pass
+    def test_config_loader_required_path(self):
+        """Test ConfigLoader requires a path"""
+        # Test that ConfigLoader requires a path argument
+        with self.assertRaises(TypeError):
+            ConfigLoader()
 
     def test_load_config(self):
         """Test loading configuration from file"""
@@ -81,15 +82,15 @@ class TestConfigLoader(unittest.TestCase):
     def test_get_config_value_function(self):
         """Test get_config_value function"""
         # Set up the global loader with our test config
-        loader = get_config_loader(self.temp_file.name)
+        loader = init_config_loader(self.temp_file.name)
 
         # Test existing values
-        self.assertEqual(get_config_value("test_section.string_value"), "test_string")
-        self.assertEqual(get_config_value("test_section.int_value"), 42)
-        self.assertEqual(get_config_value("test_section.nested.nested_value"), "nested_string")
+        self.assertEqual(get_config().get("test_section.string_value"), "test_string")
+        self.assertEqual(get_config().get("test_section.int_value"), 42)
+        self.assertEqual(get_config().get("test_section.nested.nested_value"), "nested_string")
 
         # Test non-existing value with default
-        self.assertEqual(get_config_value("non.existing.key", "default"), "default")
+        self.assertEqual(get_config().get("non.existing.key", "default"), "default")
 
     def test_get_section_configs(self):
         """Test getting section configurations"""

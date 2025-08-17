@@ -2,10 +2,10 @@
 
 # Clash proxy configuration
 clash:
-  config_path: "/your/own/fucking/config/clash/config/path"
+  config_path: "/mnt/c/Users/10255/.config/clash/config.yaml"
   host: "localhost"
   port: 9090
-  secret: "your-own-fucking-secret-key"
+  secret: "test-secret"
 
 # Data fetching configuration
 data_fetching:
@@ -23,4 +23,4 @@ logging:
 
 # Data storage configuration
 data_storage:
-  stock_data_path: "/your/own/fucking/stock_data_path"
+  stock_data_path: "stock_data"

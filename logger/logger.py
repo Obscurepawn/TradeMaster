@@ -4,7 +4,7 @@ import sys
 
 # Add parent directory to path to import config module
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from config.config_loader import get_config_value
+from config.config_loader import init_config_loader, get_config
 
 # Configure log format
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -35,7 +35,9 @@ def get_logger(name: str, log_file: str = None) -> logging.Logger:
         # Create file handler
         if log_file is None:
             # Use log file path from configuration
-            log_file = get_config_value("logging.file_path", "logs/app.log")
+            # Initialize configuration loader with default config
+            init_config_loader("config/config.yaml")
+            log_file = get_config().get("logging.file_path", "logs/app.log")
 
         # Ensure directory exists for log file
         log_dir = os.path.dirname(log_file)

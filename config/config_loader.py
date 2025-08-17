@@ -7,22 +7,19 @@ import os
 import yaml
 from typing import Any, Dict, Optional
 
-# Default configuration file path
-DEFAULT_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.yaml")
 
 
 class ConfigLoader:
     """Configuration loader class."""
 
-    def __init__(self, config_path: Optional[str] = None):
+    def __init__(self, config_path: str):
         """
         Initialize the configuration loader.
 
         Args:
-            config_path (str, optional): Path to the configuration file.
-                                         If not provided, uses the default path.
+            config_path (str): Path to the configuration file.
         """
-        self.config_path = config_path or DEFAULT_CONFIG_PATH
+        self.config_path = config_path
         self._config = None
         self.load_config()
 
@@ -98,33 +95,40 @@ class ConfigLoader:
 _config_loader: Optional[ConfigLoader] = None
 
 
-def get_config_loader(config_path: Optional[str] = None) -> ConfigLoader:
+def init_config_loader(config_path: str) -> ConfigLoader:
     """
     Get the global configuration loader instance.
-    
+
+    This function ensures that only one ConfigLoader instance exists at a time.
+    If a ConfigLoader already exists, it will be replaced with a new one using
+    the provided config_path.
+
     Args:
-        config_path (str, optional): Path to the configuration file.
-                                     If not provided, uses the default path.
+        config_path (str): Path to the configuration file.
 
     Returns:
         ConfigLoader: The global configuration loader instance.
     """
     global _config_loader
-    if _config_loader is None or config_path is not None:
-        _config_loader = ConfigLoader(config_path)
+    # Create or replace the global instance with the provided config path
+    _config_loader = ConfigLoader(config_path)
     return _config_loader
 
 
-def get_config_value(key_path: str, default: Any = None) -> Any:
+def get_config() -> ConfigLoader:
     """
-    Get a configuration value using the global configuration loader.
+    Get the global configuration loader instance.
 
-    Args:
-        key_path (str): Dot-separated path to the configuration value (e.g., "clash.host").
-        default (Any): Default value to return if the key is not found.
+    This function returns the current global ConfigLoader instance.
+    If no instance has been created yet, it raises a RuntimeError.
 
     Returns:
-        Any: The configuration value or default if not found.
+        ConfigLoader: The global configuration loader instance.
+
+    Raises:
+        RuntimeError: If no configuration loader has been initialized.
     """
-    loader = get_config_loader()
-    return loader.get(key_path, default)
+    global _config_loader
+    if _config_loader is None:
+        raise RuntimeError("No configuration loader initialized. Call get_config_loader(config_path) first.")
+    return _config_loader
