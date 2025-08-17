@@ -94,7 +94,7 @@ class AkshareDataLoader(DataLoader):
         Returns:
             Optional[pd.DataFrame]: Stock historical data, returns None if failed to retrieve
         """
-        # 提取参数
+        # Extract parameters
         name = kwargs.get("name", "")
         period = kwargs.get("period", "daily")
         adjust = kwargs.get("adjust", "qfq")
@@ -153,7 +153,7 @@ class AkshareDataLoader(DataLoader):
                 - sleep_seconds (float): Sleep seconds, default 0.2
                 - proxy_controller: Proxy controller
         """
-        # 提取参数
+        # Extract parameters
         period = kwargs.get("period", "daily")
         adjust = kwargs.get("adjust", "qfq")
         start_date = kwargs.get("start_date", "")
@@ -317,49 +317,113 @@ class AkshareDataLoader(DataLoader):
             df_cashflow = ak.stock_financial_report_sina(
                 stock=symbol,
                 symbol=constant.CASH_FLOW_STATEMENT,
-                report_type=constant.ANNUAL_REPORT,
             )
 
             # Extract capital expenditure field
-            df_cashflow = df_cashflow[
-                [constant.REPORT_DATE, constant.CAPITAL_EXPENDITURE]
-            ]
-            df_cashflow = df_cashflow.rename(
-                columns={constant.CAPITAL_EXPENDITURE: "capital_expenditure"}
-            )
+            # Handle different possible field names for capital expenditure
+            capital_expenditure_field = constant.CAPITAL_EXPENDITURE
+            if capital_expenditure_field not in df_cashflow.columns:
+                # Look for alternative field names
+                alternative_fields = [col for col in df_cashflow.columns if constant.CAPITAL_EXPENDITURE in col or constant.CAPITAL_EXPENDITURE_ALTERNATIVE_1 in col]
+                if alternative_fields:
+                    capital_expenditure_field = alternative_fields[0]
+                else:
+                    # If no capital expenditure field found, create a column with zeros
+                    df_cashflow[constant.REPORT_DATE] = df_cashflow[constant.REPORT_DATE]
+                    df_cashflow["capital_expenditure"] = 0
+                    capital_expenditure_field = "capital_expenditure"
+            else:
+                df_cashflow = df_cashflow.rename(
+                    columns={constant.CAPITAL_EXPENDITURE: "capital_expenditure"}
+                )
+                capital_expenditure_field = "capital_expenditure"
+
+            # Ensure we have the report date and capital expenditure columns
+            if constant.REPORT_DATE in df_cashflow.columns:
+                df_cashflow = df_cashflow[[constant.REPORT_DATE, capital_expenditure_field]]
+                df_cashflow = df_cashflow.rename(
+                    columns={capital_expenditure_field: "capital_expenditure"}
+                )
+            else:
+                raise Exception(f"Report date column not found in cash flow statement for stock {symbol}")
 
             # Get income statement
             df_income = ak.stock_financial_report_sina(
                 stock=symbol,
                 symbol=constant.INCOME_STATEMENT,
-                report_type=constant.ANNUAL_REPORT,
             )
 
             # Extract net profit and depreciation fields
-            df_income = df_income[
-                [
-                    constant.REPORT_DATE,
-                    constant.NET_PROFIT,
-                    constant.ASSET_IMPAIRMENT,
-                    constant.DEPRECIATION,
-                ]
+            # Use more comprehensive fields for depreciation calculation
+            depreciation_fields = []
+            impairment_fields = []
+
+            # Check for depreciation fields (use multiple possible fields)
+            possible_depreciation_fields = [
+                constant.DEPRECIATION,  # Depreciation
+                constant.FIXED_ASSET_DEPRECIATION,  # Fixed asset depreciation
+                constant.INTANGIBLE_ASSET_AMORTIZATION,  # Intangible asset amortization
+                constant.LONG_TERM_PREPAID_EXPENSES_AMORTIZATION,  # Long-term prepaid expenses amortization
+                constant.INVESTMENT_PROPERTY_DEPRECIATION,  # Investment property depreciation
             ]
-            df_income["depreciation"] = (
-                df_income[constant.ASSET_IMPAIRMENT] + df_income[constant.DEPRECIATION]
-            )
+
+            for field in possible_depreciation_fields:
+                if field in df_income.columns:
+                    depreciation_fields.append(field)
+
+            # Check for impairment fields (use multiple possible fields)
+            possible_impairment_fields = [
+                constant.ASSET_IMPAIRMENT,  # Asset impairment loss
+                constant.CREDIT_IMPAIRMENT_LOSS,  # Credit impairment loss
+                constant.OTHER_ASSET_IMPAIRMENT_LOSSES,  # Other asset impairment losses
+            ]
+
+            for field in possible_impairment_fields:
+                if field in df_income.columns:
+                    impairment_fields.append(field)
+
+            # Build the list of required fields
+            required_fields = [constant.REPORT_DATE, constant.NET_PROFIT]
+            if depreciation_fields:
+                required_fields.extend(depreciation_fields)
+            if impairment_fields:
+                required_fields.extend(impairment_fields)
+
+            df_income_filtered = df_income[required_fields]
+
+            # Calculate total depreciation and amortization
+            # Initialize depreciation column with zeros
+            df_income_filtered = df_income_filtered.copy()
+            df_income_filtered.loc[:, "depreciation"] = 0.0
+
+            # Add all depreciation fields
+            for field in depreciation_fields:
+                # Convert to numeric and handle dtype issues
+                df_income_filtered[field] = pd.to_numeric(df_income_filtered[field], errors='coerce')
+                df_income_filtered.loc[:, "depreciation"] += df_income_filtered[field].fillna(0)
+
+            # Add all impairment fields (treated as part of depreciation/amortization)
+            for field in impairment_fields:
+                # Convert to numeric and handle dtype issues
+                df_income_filtered[field] = pd.to_numeric(df_income_filtered[field], errors='coerce')
+                df_income_filtered.loc[:, "depreciation"] += df_income_filtered[field].fillna(0)
 
             # Merge cash flow statement and income statement
             df_merge = pd.merge(
                 df_cashflow,
-                df_income[[constant.REPORT_DATE, constant.NET_PROFIT, "depreciation"]],
+                df_income_filtered[[constant.REPORT_DATE, constant.NET_PROFIT, "depreciation"]],
                 on=constant.REPORT_DATE,
+                how='outer'  # Use outer join to preserve all data
             )
 
             # Calculate shareholder surplus (in 10,000 yuan)
+            df_merge[constant.NET_PROFIT] = pd.to_numeric(df_merge[constant.NET_PROFIT], errors='coerce')
+            df_merge["capital_expenditure"] = pd.to_numeric(df_merge["capital_expenditure"], errors='coerce')
+
             df_merge["shareholder_surplus"] = (
-                df_merge[constant.NET_PROFIT]
-                + df_merge["depreciation"]
-                - df_merge["capital_expenditure"]
+                df_merge[constant.NET_PROFIT].fillna(0)
+                + df_merge["depreciation"].fillna(0)
+                - df_merge["capital_expenditure"].fillna(0)
             ) / 10000  # Convert to 10,000 yuan
 
             # Format output

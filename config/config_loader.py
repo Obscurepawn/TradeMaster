@@ -66,14 +66,14 @@ class ConfigLoader:
             "secret": self.get("clash.secret")
         }
 
-    def get_data_fetching_config(self) -> Dict[str, Any]:
-        """Get data fetching configuration."""
+    def get_data_loader_config(self) -> Dict[str, Any]:
+        """Get data loader configuration."""
         return {
-            "start_date": self.get("data_fetching.start_date"),
-            "end_date": self.get("data_fetching.end_date"),
-            "retry_times": self.get("data_fetching.retry_times"),
-            "sleep_seconds": self.get("data_fetching.sleep_seconds"),
-            "stock_limit": self.get("data_fetching.stock_limit")
+            "start_date": self.get("data_loader.start_date"),
+            "end_date": self.get("data_loader.end_date"),
+            "retry_times": self.get("data_loader.retry_times"),
+            "sleep_seconds": self.get("data_loader.sleep_seconds"),
+            "stock_limit": self.get("data_loader.stock_limit")
         }
 
     def get_logging_config(self) -> Dict[str, Any]:

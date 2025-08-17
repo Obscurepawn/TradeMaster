@@ -69,12 +69,23 @@ FINANCIAL_INDICATOR_BY_QUARTER = "by_quarter"
 CASH_FLOW_STATEMENT = "现金流量表"
 INCOME_STATEMENT = "利润表"
 ANNUAL_REPORT = "年报"
-REPORT_DATE = "报表日期"
+REPORT_DATE = "报告日"
 CASH_FLOW_OPS = "经营活动产生的现金流量净额"
 CAPITAL_EXPENDITURE = "购建固定资产、无形资产和其他长期资产支付的现金"
-ASSET_IMPAIRMENT = "资产减值准备"
-DEPRECIATION = "固定资产折旧、油气资产折耗、生产性生物资产折旧"
+ASSET_IMPAIRMENT = "资产减值损失"
+DEPRECIATION = "折旧费"
 NET_PROFIT = "净利润"
+
+# Alternative capital expenditure field names
+CAPITAL_EXPENDITURE_ALTERNATIVE_1 = "购建固定资产、无形资产和其他长期资产所支付的现金"
+
+# Additional depreciation and impairment fields
+FIXED_ASSET_DEPRECIATION = "固定资产折旧"
+INTANGIBLE_ASSET_AMORTIZATION = "无形资产摊销"
+LONG_TERM_PREPAID_EXPENSES_AMORTIZATION = "长期待摊费用摊销"
+INVESTMENT_PROPERTY_DEPRECIATION = "投资性房地产折旧"
+CREDIT_IMPAIRMENT_LOSS = "信用减值损失"
+OTHER_ASSET_IMPAIRMENT_LOSSES = "其他资产减值损失"
 
 # Shareholder surplus valuation constants
 VALUATION_INDICATOR_TOTAL_MARKET_CAP = "total_market_cap"
