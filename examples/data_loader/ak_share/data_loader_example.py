@@ -38,7 +38,7 @@ def main():
     end_date = get_config().get("data_loader.end_date")
     retry_times = get_config().get("data_loader.retry_times")
     sleep_seconds = get_config().get("data_loader.sleep_seconds")
-    stock_limit = get_config().get("data_loader.stock_limit")
+    stock_limit = 10
 
     # Create data loader using factory
     data_loader: DataLoader = DataLoaderFactory.create_data_loader("akshare")

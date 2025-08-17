@@ -73,7 +73,6 @@ class ConfigLoader:
             "end_date": self.get("data_loader.end_date"),
             "retry_times": self.get("data_loader.retry_times"),
             "sleep_seconds": self.get("data_loader.sleep_seconds"),
-            "stock_limit": self.get("data_loader.stock_limit")
         }
 
     def get_logging_config(self) -> Dict[str, Any]:
