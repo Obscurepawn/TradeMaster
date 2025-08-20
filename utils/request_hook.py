@@ -1,7 +1,6 @@
 import requests
 import random
-from functools import wraps
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Dict, Optional
 import sys
 import os
 
@@ -60,7 +59,7 @@ def update_headers_with_user_agent(
     return headers
 
 
-def hooked_get(url: str, **kwargs: Any) -> requests.Response:
+def hooked_get_with_user_agent(url: str, **kwargs: Any) -> requests.Response:
     """Hooked version of requests.get"""
     # Update headers with User-Agent
     kwargs["headers"] = update_headers_with_user_agent(kwargs.get("headers"))
@@ -70,7 +69,7 @@ def hooked_get(url: str, **kwargs: Any) -> requests.Response:
     return _original_get(url, **kwargs)
 
 
-def hooked_post(url: str, **kwargs: Any) -> requests.Response:
+def hooked_post_with_user_agent(url: str, **kwargs: Any) -> requests.Response:
     """Hooked version of requests.post"""
     # Update headers with User-Agent
     kwargs["headers"] = update_headers_with_user_agent(kwargs.get("headers"))
@@ -80,7 +79,7 @@ def hooked_post(url: str, **kwargs: Any) -> requests.Response:
     return _original_post(url, **kwargs)
 
 
-def hooked_request(
+def hooked_request_with_user_agent(
     self: requests.Session, method: str, url: str, **kwargs: Any
 ) -> requests.Response:
     """Hooked version of requests.Session.request"""
@@ -92,14 +91,14 @@ def hooked_request(
     return _original_request(self, method, url, **kwargs)
 
 
-def install_hooks() -> None:
+def install_user_agent_hooks() -> None:
     """Install the HTTP request hooks"""
     global _original_get, _original_post, _original_request
 
     # Replace the original methods with hooked versions
-    requests.get = hooked_get
-    requests.post = hooked_post
-    requests.Session.request = hooked_request
+    requests.get = hooked_get_with_user_agent
+    requests.post = hooked_post_with_user_agent
+    requests.Session.request = hooked_request_with_user_agent
 
     logger.info("HTTP request hooks installed successfully")
 
@@ -116,7 +115,7 @@ def uninstall_hooks() -> None:
     logger.info("HTTP request hooks uninstalled successfully")
 
 
-class RequestHookContext:
+class RequestHookUserAgentContext:
     """Context manager for temporarily setting a User-Agent"""
 
     def __init__(self, user_agent: Optional[str] = None):

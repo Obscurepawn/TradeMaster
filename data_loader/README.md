@@ -45,12 +45,6 @@ financial_data = data_loader.get_financial_indicators(
     indicator="by_report"
 )
 
-# Get shareholder surplus data
-shareholder_surplus_data = data_loader.get_shareholder_surplus(
-    symbol="000001"
-)
-```
-
 ## Supported Data Sources
 
 Currently supported data sources:

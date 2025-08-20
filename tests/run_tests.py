@@ -1,72 +1,39 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 """
-Test runner script for running all unit tests
+Test runner for the TradeMaster project
 """
+
 import unittest
 import sys
 import os
 
 # Add project root to path
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, project_root)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-def run_all_tests():
-    """Run all tests in the tests directory"""
-    # Create test suite manually
+# Import test modules
+from tests.config.test_config import TestConfig
+from tests.data_loader.test_data_loader_factory import TestDataLoaderFactory
+from tests.data_loader.ak_share.test_akshare_data_loader import TestAkshareDataLoader
+from tests.logger.test_logger import TestLogger
+from tests.proxy.clash.test_proxy import TestProxy
+
+if __name__ == "__main__":
+    # Create test suite
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
 
-    # Add tests manually
-    try:
-        from tests.logger.test_logger import TestLogger
-        suite.addTests(loader.loadTestsFromTestCase(TestLogger))
-    except ImportError as e:
-        print(f"Failed to import logger tests: {e}")
-
-    try:
-        from tests.proxy.clash.test_proxy import TestClashConfigParser, TestClashController
-        suite.addTests(loader.loadTestsFromTestCase(TestClashConfigParser))
-        suite.addTests(loader.loadTestsFromTestCase(TestClashController))
-    except ImportError as e:
-        print(f"Failed to import proxy tests: {e}")
-
-    try:
-        from tests.data_loader.ak_share.test_request_hook import TestRequestHook
-        suite.addTests(loader.loadTestsFromTestCase(TestRequestHook))
-    except ImportError as e:
-        print(f"Failed to import request hook tests: {e}")
-
-    try:
-        from tests.data_loader.ak_share.test_akshare_data_loader import TestStockDataLoader
-        suite.addTests(loader.loadTestsFromTestCase(TestStockDataLoader))
-    except ImportError as e:
-        print(f"Failed to import stock data loader tests: {e}")
-
-    try:
-        from tests.data_loader.test_data_loader_factory import TestDataReaderFactory
-        suite.addTests(loader.loadTestsFromTestCase(TestDataReaderFactory))
-    except ImportError as e:
-        print(f"Failed to import data loader factory tests: {e}")
-
-    try:
-        from tests.config.test_config import TestConfigLoader
-        suite.addTests(loader.loadTestsFromTestCase(TestConfigLoader))
-    except ImportError as e:
-        print(f"Failed to import config tests: {e}")
-
-    try:
-        from tests.data_loader.ak_share.test_financial_indicators import TestFinancialIndicators
-        suite.addTests(loader.loadTestsFromTestCase(TestFinancialIndicators))
-    except ImportError as e:
-        print(f"Failed to import financial indicators tests: {e}")
+    # Add tests to suite
+    suite.addTests(loader.loadTestsFromTestCase(TestConfig))
+    suite.addTests(loader.loadTestsFromTestCase(TestDataLoaderFactory))
+    suite.addTests(loader.loadTestsFromTestCase(TestAkshareDataLoader))
+    suite.addTests(loader.loadTestsFromTestCase(TestLogger))
+    suite.addTests(loader.loadTestsFromTestCase(TestProxy))
 
     # Run tests
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
 
-    # Return exit code based on test results
-    return 0 if result.wasSuccessful() else 1
-
-if __name__ == '__main__':
-    exit_code = run_all_tests()
-    sys.exit(exit_code)
+    # Exit with error code if tests failed
+    sys.exit(not result.wasSuccessful())

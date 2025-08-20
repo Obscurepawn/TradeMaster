@@ -28,7 +28,7 @@ def main():
         init_config_loader("examples/config/config.yaml")
 
         # Get configuration
-        config_path = get_config().get("clash.config_path")
+        config_path = get_config().get_clash_config_path()
         host, port, secret = ClashConfigParser.parse_config(config_path)
         controller = ClashController("localhost", port, secret)
 
@@ -42,7 +42,7 @@ def main():
         if success:
             print("Successfully switched to a random proxy")
         else:
-            print("Failed to switch to a random proxy")
+            print("Fail to switch to a random proxy")
 
     except Exception as e:
         print(f"Error occurred: {e}")

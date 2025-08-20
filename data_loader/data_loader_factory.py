@@ -1,4 +1,4 @@
-from typing import Optional
+from .data_loader import constants
 from .data_loader import DataLoader
 from .ak_share.akshare_data_loader import AkshareDataLoader
 
@@ -20,7 +20,7 @@ class DataLoaderFactory:
         Raises:
             ValueError: When an unsupported loader type is requested
         """
-        if loader_type.lower() == "akshare":
+        if loader_type.lower() == constants.AK_SHARE:
             return AkshareDataLoader()
         else:
             raise ValueError(

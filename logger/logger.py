@@ -35,9 +35,12 @@ def get_logger(name: str, log_file: str = None) -> logging.Logger:
         # Create file handler
         if log_file is None:
             # Use log file path from configuration
-            # Initialize configuration loader with default config
-            init_config_loader("config/config.yaml")
-            log_file = get_config().get("logging.file_path", "logs/app.log")
+            # Check if config loader has been initialized
+            try:
+                log_file = get_config().get_logging_file_path()
+            except RuntimeError:
+                # If config loader hasn't been initialized, use a default log file path
+                log_file = "logs/app.log"
 
         # Ensure directory exists for log file
         log_dir = os.path.dirname(log_file)

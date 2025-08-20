@@ -97,3 +97,16 @@ The project uses a YAML configuration file located at `config/config.yaml`. This
 - Logging configuration
 
 Please update the values in this file according to your environment before running the application.
+
+### Configuration Initialization
+
+Before using any components that require configuration (such as loggers), you must initialize the configuration loader:
+
+```python
+from config.config_loader import init_config_loader
+
+# Initialize configuration loader with actual config file
+config_loader = init_config_loader("config/config.yaml")
+```
+
+This should be done at the beginning of your application, before creating any logger instances or using other components that depend on configuration.

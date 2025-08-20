@@ -19,14 +19,14 @@ from config.config_loader import init_config_loader, get_config
 from data_loader.data_loader import DataLoader
 from data_loader.data_loader_factory import DataLoaderFactory
 from proxy.clash.proxy import ClashConfigParser, ClashController
-import data_loader.ak_share.constant as constant
+import data_loader.ak_share.constants as constants
 
 
 def main():
     """Main function to fetch last 10 years of stock data"""
     # Install HTTP request hooks
-    from utils.request_hook import install_hooks
-    install_hooks()
+    from utils.request_hook import install_user_agent_hooks
+    install_user_agent_hooks()
 
     # Initialize configuration loader with examples config
     init_config_loader("examples/config/config.yaml")
@@ -42,8 +42,8 @@ def main():
     print(f"Fetching stock data from {start_date_str} to {end_date_str}")
 
     # Load configuration
-    retry_times = get_config().get("data_loader.retry_times")
-    sleep_seconds = get_config().get("data_loader.sleep_seconds")
+    retry_times = get_config().get_data_loader_retry_times()
+    sleep_seconds = get_config().get_data_loader_sleep_seconds()
 
     # Create data loader using factory
     data_loader: DataLoader = DataLoaderFactory.create_data_loader("akshare")
@@ -51,12 +51,12 @@ def main():
     # Initialize proxy controller
     proxy_controller = None
     try:
-        config_path = get_config().get("clash.config_path")
+        config_path = get_config().get_clash_config_path()
         host, port, secret = ClashConfigParser.parse_config(config_path)
         proxy_controller = ClashController(host, port, secret)
         print("Proxy controller initialized successfully")
     except Exception as e:
-        print(f"Failed to initialize proxy controller: {e}")
+        print(f"Fail to initialize proxy controller: {e}")
         proxy_controller = None
 
     # Get stock list
@@ -68,8 +68,8 @@ def main():
     print("Fetching historical data for all stocks...")
     data_loader.get_stock_histories(
         stock_list=stock_list,
-        period=constant.PERIOD_DAILY,
-        adjust=constant.EN_STOCK_ADJUST_QFQ,
+        period=constants.PERIOD_DAILY,
+        adjust=constants.EN_STOCK_ADJUST_QFQ,
         start_date=start_date_str,
         end_date=end_date_str,
         retry_times=retry_times,
