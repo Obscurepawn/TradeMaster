@@ -4,7 +4,7 @@ import sys
 
 # Add parent directory to path to import config module
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from config.config_loader import init_config_loader, get_config
+from config.config_loader import get_config
 
 # Configure log format
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

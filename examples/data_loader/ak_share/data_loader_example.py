@@ -28,7 +28,7 @@ def main():
     """Main function to demonstrate stock data loading"""
 
     # Initialize configuration loader with examples config
-    init_config_loader("examples/config/config.yaml")
+    init_config_loader("examples/config.yaml")
 
     # Load configuration
     start_date = get_config().get_data_loader_start_date()

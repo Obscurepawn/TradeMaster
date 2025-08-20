@@ -25,7 +25,7 @@ def main():
     """Main function to demonstrate Clash proxy controller usage"""
     try:
         # Initialize configuration loader with examples config
-        init_config_loader("examples/config/config.yaml")
+        init_config_loader("examples/config.yaml")
 
         # Get configuration
         config_path = get_config().get_clash_config_path()

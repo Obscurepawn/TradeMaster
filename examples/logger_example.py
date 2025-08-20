@@ -16,7 +16,7 @@ from logger.logger import get_logger
 
 # Initialize configuration loader with actual config file
 # This should be done before getting any logger instances
-config_loader = init_config_loader("config/config.yaml")
+config_loader = init_config_loader("example/config.yaml")
 
 # Now we can get a logger instance
 logger = get_logger(__name__)

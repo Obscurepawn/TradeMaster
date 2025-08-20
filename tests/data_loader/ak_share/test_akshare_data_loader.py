@@ -35,7 +35,7 @@ class TestAkshareDataLoader(unittest.TestCase):
 
         # Create sample stock list
         self.sample_stock_list = pd.DataFrame({
-            "code": ["000001", "000002"],
+        "code": ["000001", "000002"],
             "name": ["平安银行", "万科A"]
         })
 

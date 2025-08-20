@@ -4,9 +4,9 @@ This directory contains example scripts demonstrating how to use various modules
 
 ## Configuration
 
-All examples use the configuration system provided by TradeMaster. The configuration files are located in the `examples/config/` directory. Examples will first look for configuration in `examples/config/config.yaml`, and if not found, will fall back to the project root configuration.
+All examples use the configuration system provided by TradeMaster. The configuration files are located in the `examples/config/` directory. Examples will first look for configuration in `examples/config.yaml`, and if not found, will fall back to the project root configuration.
 
-To customize the configuration for examples, modify the `examples/config/config.yaml` file.
+To customize the configuration for examples, modify the `examples/config.yaml` file.
 ## Directory Structure
 
 - `proxy/clash/` - Examples for Clash proxy controller

@@ -8,14 +8,10 @@ import sys
 import os
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-from config.config_loader import init_config_loader, get_config
 from logger.logger import get_logger
 
-# Create logger instance
-# Initialize configuration loader with default config before creating logger
-init_config_loader("config/config.yaml")
-logger = get_logger(__name__)
 
+logger = get_logger(__name__)
 
 LOCAL_HOST = "localhost"
 DEFAULT_PORT = 9090

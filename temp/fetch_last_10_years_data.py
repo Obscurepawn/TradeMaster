@@ -29,7 +29,7 @@ def main():
     install_user_agent_hooks()
 
     # Initialize configuration loader with examples config
-    init_config_loader("examples/config/config.yaml")
+    init_config_loader("examples/config.yaml")
 
     # Calculate date range for last 10 years
     end_date = datetime.now()

@@ -1,0 +1,25 @@
+# TradeMaster Configuration File
+
+# Clash proxy configuration
+clash:
+  config_path: "/mnt/c/Users/10255/.config/clash/config.yaml"
+  host: "localhost"
+  port: 9090
+  secret: "test-secret"
+
+# Data loader configuration
+data_loader:
+  start_date: "20100818"
+  end_date: "20250818"
+  retry_times: 2147483647  # 2**31 - 1
+  sleep_seconds: 3
+
+# Logging configuration
+logging:
+  level: "INFO"
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_path: "logs/app.log"
+
+# Data storage configuration
+data_storage:
+  stock_data_path: "stock_data"

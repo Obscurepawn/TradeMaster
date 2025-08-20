@@ -106,7 +106,7 @@ Before using any components that require configuration (such as loggers), you mu
 from config.config_loader import init_config_loader
 
 # Initialize configuration loader with actual config file
-config_loader = init_config_loader("config/config.yaml")
+config_loader = init_config_loader("/your/own/fucking/config/path/config.yaml")
 ```
 
 This should be done at the beginning of your application, before creating any logger instances or using other components that depend on configuration.
