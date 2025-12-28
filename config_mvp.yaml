@@ -2,7 +2,7 @@ start_date: 2023-08-01
 end_date: 2023-09-01
 initial_cash: 100000.0
 strategy_name: PESmallCap
-use_cache: true
+use_cache: false
 baseline:
   - sh000300
   - sh000905

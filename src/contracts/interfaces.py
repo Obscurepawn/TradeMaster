@@ -44,17 +44,15 @@ class Strategy(ABC):
 
 
 class DataSource(ABC):
-    """Abstract interface for market data providers.
+    """Abstract interface for remote market data sources.
 
-    Implementations are responsible for fetching and providing market data
-    from local cache or remote APIs.
+    Implementations are responsible for fetching market data from remote APIs.
+    Caching and orchestration are handled by the higher-level DataLoader.
     """
 
     @abstractmethod
-    def get_daily_bars(self, code: str, start_date: date, end_date: date) -> pd.DataFrame:
-        """Fetch daily OHLCV data for a specific stock code.
-
-        Should handle caching internally (check DuckDB first, then fetch remote).
+    def fetch_daily_bars(self, code: str, start_date: date, end_date: date) -> pd.DataFrame:
+        """Fetch daily OHLCV data for a specific stock code from a remote source.
 
         Args:
             code: The stock symbol or security identifier.
@@ -68,8 +66,8 @@ class DataSource(ABC):
         pass
 
     @abstractmethod
-    def get_index_daily(self, code: str, start_date: date, end_date: date) -> pd.DataFrame:
-        """Fetch daily data for an index (benchmark).
+    def fetch_index_daily(self, code: str, start_date: date, end_date: date) -> pd.DataFrame:
+        """Fetch daily data for an index (benchmark) from a remote source.
 
         Args:
             code: The index symbol (e.g., '000300.SH').

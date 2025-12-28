@@ -23,7 +23,7 @@ class GlobalRequestHook:
     def __init__(self, proxy_manager: Optional[ProxyManager] = None):
         self.proxy_manager = proxy_manager or ProxyManager()
         self.request_count = 0
-        self.rotation_threshold = 5  # Rotate proxy every 5 requests
+        self.rotation_threshold = 1  # Rotate proxy every 5 requests
 
     def patched_request(self, session_instance: requests.Session, method: str, url: str, **kwargs) -> requests.Response:
         """Custom replacement for requests.Session.request."""

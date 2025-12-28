@@ -4,7 +4,8 @@ from datetime import date
 import pandas as pd
 from src.backtest.engine import BacktestEngine
 from src.config.schema import BacktestConfig
-from src.contracts.interfaces import DataSource, Strategy
+from src.contracts.interfaces import Strategy
+from src.data_loader.base import DataLoader
 from src.backtest.portfolio import Portfolio
 
 
@@ -20,8 +21,8 @@ class TestBacktestEngine(unittest.TestCase):
             universe=["sh600000"]
         )
 
-        # Mock DataSource
-        loader = MagicMock(spec=DataSource)
+        # Mock DataLoader
+        loader = MagicMock(spec=DataLoader)
 
         d1 = date(2023, 1, 1)
         d2 = date(2023, 1, 2)
@@ -38,6 +39,7 @@ class TestBacktestEngine(unittest.TestCase):
             return df
 
         loader.get_daily_bars.side_effect = get_bars
+        loader.get_index_daily.return_value = pd.DataFrame({'close': [1.0, 1.1]}, index=[d1, d2])
 
         # Mock Strategy
         strategy = MagicMock(spec=Strategy)

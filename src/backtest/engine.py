@@ -1,7 +1,8 @@
 from datetime import date, timedelta
 from typing import List, Dict
 import pandas as pd
-from src.contracts.interfaces import Strategy, DataSource
+from src.contracts.interfaces import Strategy
+from src.data_loader.base import DataLoader
 from src.backtest.portfolio import Portfolio
 from src.domain import BacktestResult
 from src.config.schema import BacktestConfig
@@ -40,16 +41,16 @@ class BacktestEngine:
         context: The context object passed to the strategy.
     """
 
-    def __init__(self, config: BacktestConfig, data_source: DataSource, strategy: Strategy):
+    def __init__(self, config: BacktestConfig, data_loader: DataLoader, strategy: Strategy):
         """Initializes the BacktestEngine.
 
         Args:
             config: Backtest configuration (dates, universe, cash, etc.).
-            data_source: Implementation of the DataSource interface.
+            data_loader: Implementation of the high-level DataLoader.
             strategy: Implementation of the Strategy interface.
         """
         self.config = config
-        self.data_loader = data_source
+        self.data_loader = data_loader
         self.strategy = strategy
         self.portfolio = Portfolio(config.initial_cash)
         self.context = BacktestContext(self.portfolio)

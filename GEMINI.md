@@ -11,6 +11,8 @@ Auto-generated from all feature plans. Last updated: 2025-12-28
 - Python 3.12+ + `pyyaml`, `requests` (007-config-clash-path)
 - Python 3.12+ + `requests`, `pyyaml` (008-integrate-proxy-rotation-in-hook)
 - Python 3.12+ + `requests`, `akshare`, `pyyaml`, `duckdb`, `matplotlib` (009-codebase-cleanup)
+- Python 3.12+ + `pandas`, `akshare`, `duckdb` (010-refactor-data-loader)
+- DuckDB (Centralized) (010-refactor-data-loader)
 
 - (001-initial-framework)
 
@@ -30,9 +32,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 010-refactor-data-loader: Added Python 3.12+ + `pandas`, `akshare`, `duckdb`
 - 009-codebase-cleanup: Added Python 3.12+ + `requests`, `akshare`, `pyyaml`, `duckdb`, `matplotlib`
 - 008-integrate-proxy-rotation-in-hook: Added Python 3.12+ + `requests`, `pyyaml`
-- 007-config-clash-path: Added Python 3.12+ + `pyyaml`, `requests`
 
 
 <!-- MANUAL ADDITIONS START -->

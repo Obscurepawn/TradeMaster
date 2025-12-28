@@ -3,7 +3,9 @@ import argparse
 import logging
 from src.config.settings import load_config
 from src.config.logging_config import setup_logging
-from src.data_loader.akshare_loader import AkshareLoader
+from src.data_loader.akshare_loader import AkshareSource
+from src.data_loader.base import DataLoader
+from src.data_loader.cache import CacheManager
 from src.backtest.engine import BacktestEngine
 from src.drawing.plotter import Plotter
 from src.strategy.pe_small_cap import PESmallCapStrategy
@@ -24,9 +26,10 @@ def main():
     1. Parses command-line arguments.
     2. Loads the backtest configuration from YAML.
     3. Initializes logging.
-    4. Initializes the data loader and selected strategy.
-    5. Executes the backtest engine.
-    6. Displays the total return and plots performance results.
+    4. Initializes the data source, cache, and high-level data loader.
+    5. Initializes the selected strategy.
+    6. Executes the backtest engine.
+    7. Displays the total return and plots performance results.
     """
     parser = argparse.ArgumentParser(description="TradeMaster Backtest CLI")
     parser.add_argument("--config", type=str, required=True, help="Path to config.yaml")
@@ -47,7 +50,10 @@ def main():
 
         logger.info(f"Loaded config for strategy: {config.strategy_name}")
 
-        loader = AkshareLoader(use_cache=config.use_cache)
+        # Data Loading Stack
+        cache = CacheManager()
+        source = AkshareSource()
+        loader = DataLoader(source, cache, use_cache=config.use_cache)
 
         # Strategy Loader
         strategy_class = STRATEGY_MAP.get(config.strategy_name)
