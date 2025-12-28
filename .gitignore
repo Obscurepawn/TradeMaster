@@ -3,8 +3,5 @@ nohup.out
 *.pyc
 logs
 *.csv
-*pycache*
-stock_data
-test_output
 *demo*
 temp
