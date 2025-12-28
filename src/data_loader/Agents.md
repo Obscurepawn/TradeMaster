@@ -4,8 +4,7 @@
 Provides a unified interface for fetching market data from external sources and managing a local persistent cache. Logs all remote fetch and cache operations.
 
 ## Implementation
-- `base.py`: Defines the `DataSource` abstract base class.
-- `akshare_loader.py`: Implementation using the Akshare library with incremental loading logic (checking cache first, then fetching gaps).
+- `akshare_loader.py`: Implementation using the Akshare library with incremental loading logic (checking cache first, then fetching gaps). Remote requests are automatically protected by the global anti-scraping hook (headers, proxies, jitter). It implements the `DataSource` interface defined in `src/contracts/interfaces.py`.
 - `cache.py`: DuckDB-backed storage manager for daily market bars and index data.
 - Documentation follows Google Style standards with full type hint support.
 

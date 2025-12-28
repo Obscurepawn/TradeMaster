@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
-from typing import List, Optional, Dict
+from typing import List, Dict
+
 
 class TradeDirection(Enum):
     """Enumeration for trade directions.

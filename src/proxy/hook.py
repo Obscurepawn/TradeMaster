@@ -1,97 +1,103 @@
+import time
 import random
+import logging
 import requests
+from typing import Optional
 from src.proxy.manager import ProxyManager
+from src.proxy.headers import get_random_fingerprint
 
-USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36"
-]
+logger = logging.getLogger(__name__)
 
-class RequestHook:
+# Global state to prevent redundant initialization
+_HOOK_INITIALIZED = False
+_ORIGINAL_REQUEST = requests.sessions.Session.request
 
-    """Provides utility methods for configuring network requests with headers and proxies.
-
-
-
-    Attributes:
-
-        proxy_manager: The ProxyManager instance used for rotation.
-
-    """
-
-    def __init__(self, proxy_manager: ProxyManager):
-
-        """Initializes RequestHook.
+# Configuration
+JITTER_RANGE = (0.5, 2.0)
+DEFAULT_PROXY_URL = "http://127.0.0.1:7890"
 
 
+class GlobalRequestHook:
+    """Implements global interception of the requests library."""
 
-        Args:
+    def __init__(self, proxy_manager: Optional[ProxyManager] = None):
+        self.proxy_manager = proxy_manager or ProxyManager()
+        self.request_count = 0
+        self.rotation_threshold = 5  # Rotate proxy every 5 requests
 
-            proxy_manager: Instance for managing proxy state.
+    def patched_request(self, session_instance: requests.Session, method: str, url: str, **kwargs) -> requests.Response:
+        """Custom replacement for requests.Session.request."""
 
-        """
+        # 1. Skip hook for Clash API calls to avoid infinite recursion
+        # Extract the base controller URL from proxy_manager
+        controller_base = self.proxy_manager.api_url.replace(
+            "http://", "").replace("https://", "")
+        if controller_base in url:
+            return _ORIGINAL_REQUEST(session_instance, method, url, **kwargs)
 
-        self.proxy_manager = proxy_manager
+        # 2. Add Jitter
+        delay = random.uniform(*JITTER_RANGE)
+        logger.debug(f"Anti-Scraping: Jitter delay {delay:.2f}s before {url}")
+        time.sleep(delay)
+
+        # 3. Rotate Proxy periodically
+        self.request_count += 1
+        if self.request_count >= self.rotation_threshold:
+            logger.info("Anti-Scraping: Threshold reached. Rotating proxy...")
+            self.proxy_manager.rotate_proxy()
+            self.request_count = 0
+
+        # 4. Inject Headers (if not already explicitly provided for this specific call)
+        # We merge global fingerprint headers with any user-provided headers
+        fp = get_random_fingerprint()
+        injected_headers = fp.to_headers()
+
+        current_headers = kwargs.get("headers") or {}
+        # User-provided headers take precedence
+        merged_headers = injected_headers.copy()
+        merged_headers.update(current_headers)
+        kwargs["headers"] = merged_headers
+
+        # 5. Enforce Proxy
+        # Ensure we use the Clash local proxy port
+        if "proxies" not in kwargs or kwargs["proxies"] is None:
+            kwargs["proxies"] = {
+                "http": DEFAULT_PROXY_URL,
+                "https": DEFAULT_PROXY_URL
+            }
+
+        logger.debug(f"Anti-Scraping: Intercepted {method} {url}")
+
+        # 6. Call original request method
+        return _ORIGINAL_REQUEST(session_instance, method, url, **kwargs)
 
 
+def init_anti_scraping(proxy_manager: Optional[ProxyManager] = None):
+    """Initializes the global anti-scraping hook."""
+    global _HOOK_INITIALIZED
+    if _HOOK_INITIALIZED:
+        logger.warning("Anti-Scraping hook already initialized.")
+        return
 
-    def get_headers(self) -> dict:
+    hook = GlobalRequestHook(proxy_manager)
 
-        """Generates a random User-Agent header.
+    # Define a wrapper that passes 'self' (the session instance) correctly
+    def hook_wrapper(self, method, url, **kwargs):
+        return hook.patched_request(self, method, url, **kwargs)
 
-
-
-        Returns:
-
-            A dictionary containing the User-Agent string.
-
-        """
-
-        return {
-
-            "User-Agent": random.choice(USER_AGENTS)
-
-        }
-
-
-
-    def before_request(self):
-
-        """Pre-request hook to trigger proxy rotation."""
-
-        self.proxy_manager.rotate_proxy()
-
-        
-
-    def get_session(self) -> requests.Session:
-
-        """Creates and configures a requests.Session with headers and proxies.
+    # Apply monkeypatch
+    requests.sessions.Session.request = hook_wrapper
+    _HOOK_INITIALIZED = True
+    logger.info(
+        "Global Anti-Scraping Hook Activated (Jitter + Header Rotation + Proxy Enforcement)")
 
 
+def disable_anti_scraping():
+    """Removes the global anti-scraping hook and restores original behavior."""
+    global _HOOK_INITIALIZED
+    if not _HOOK_INITIALIZED:
+        return
 
-        Returns:
-
-            A requests.Session object configured to use the local proxy.
-
-        """
-
-        session = requests.Session()
-
-        session.headers.update(self.get_headers())
-
-        
-
-        # Configure local Clash proxy (Standard port 7890)
-
-        session.proxies = {
-
-            "http": "http://127.0.0.1:7890",
-
-            "https": "http://127.0.0.1:7890"
-
-        }
-
-        
-
-        return session
+    requests.sessions.Session.request = _ORIGINAL_REQUEST
+    _HOOK_INITIALIZED = False
+    logger.info("Global Anti-Scraping Hook Deactivated.")

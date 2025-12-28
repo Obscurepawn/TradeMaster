@@ -6,6 +6,7 @@ from src.domain import Trade, TradeDirection
 
 logger = logging.getLogger(__name__)
 
+
 class PESmallCapStrategy(Strategy):
     """Strategy that picks small cap stocks with low Price-to-Earnings ratios.
 
@@ -15,6 +16,7 @@ class PESmallCapStrategy(Strategy):
     Attributes:
         max_positions: Maximum number of stocks to hold simultaneously.
     """
+
     def on_init(self, context):
         """Initializes strategy parameters and logging.
 
@@ -61,8 +63,9 @@ class PESmallCapStrategy(Strategy):
             if code not in context.portfolio.positions:
                 # Check if enough cash is available for one target position
                 if context.portfolio.cash >= target_pos_value and len(context.portfolio.positions) < self.max_positions:
-                    quantity = int(target_pos_value / (bar['close'] * 100)) * 100
-                    
+                    quantity = int(target_pos_value /
+                                   (bar['close'] * 100)) * 100
+
                     if quantity > 0:
                         cost = bar['close'] * quantity
                         t = Trade(

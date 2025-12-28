@@ -1,31 +1,48 @@
 import unittest
-from unittest.mock import MagicMock
-from src.proxy.hook import RequestHook
-from src.proxy.manager import ProxyManager
+from unittest.mock import patch, MagicMock
+import requests
+from src.proxy.hook import GlobalRequestHook
 
-class TestRequestHook(unittest.TestCase):
-    def test_get_headers(self):
-        manager = MagicMock(spec=ProxyManager)
-        hook = RequestHook(manager)
+class TestHook(unittest.TestCase):
+    @patch('src.proxy.manager.requests.get')
+    def test_patched_request_logic(self, mock_get):
+        """Verify that headers and proxies are injected by the hook logic."""
+        # Mock ProxyManager API response
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {"proxies": {"Node": {"type": "SS"}}}
         
-        headers = hook.get_headers()
-        self.assertIn("User-Agent", headers)
-        self.assertTrue(len(headers["User-Agent"]) > 0)
+        hook = GlobalRequestHook()
+        mock_session = MagicMock(spec=requests.Session)
+        
+        with patch('src.proxy.hook._ORIGINAL_REQUEST') as mock_orig:
+            mock_orig.return_value = MagicMock(status_code=200)
+            
+            hook.patched_request(mock_session, "GET", "http://example.com", headers={"X-Test": "Value"})
+            
+            self.assertTrue(mock_orig.called)
+            args, kwargs = mock_orig.call_args
+            headers = kwargs.get("headers")
+            proxies = kwargs.get("proxies")
+            
+            self.assertIn("User-Agent", headers)
+            self.assertIn("sec-ch-ua", headers)
+            self.assertEqual(headers["X-Test"], "Value")
+            self.assertEqual(proxies["http"], "http://127.0.0.1:7890")
 
-    def test_before_request_rotates_proxy(self):
-        manager = MagicMock(spec=ProxyManager)
-        hook = RequestHook(manager)
+    @patch('src.proxy.manager.requests.get')
+    @patch('src.proxy.hook.time.sleep')
+    def test_jitter_logic(self, mock_sleep, mock_get):
+        """Verify that jitter (sleep) is called in the hook logic."""
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = {"proxies": {"Node": {"type": "SS"}}}
         
-        hook.before_request()
-        manager.rotate_proxy.assert_called_once()
+        hook = GlobalRequestHook()
+        mock_session = MagicMock(spec=requests.Session)
         
-    def test_get_session(self):
-        manager = MagicMock(spec=ProxyManager)
-        hook = RequestHook(manager)
-        
-        session = hook.get_session()
-        self.assertIn("http", session.proxies)
-        self.assertEqual(session.proxies["http"], "http://127.0.0.1:7890")
+        with patch('src.proxy.hook._ORIGINAL_REQUEST') as mock_orig:
+            mock_orig.return_value = MagicMock(status_code=200)
+            hook.patched_request(mock_session, "GET", "http://example.com")
+            self.assertTrue(mock_sleep.called)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

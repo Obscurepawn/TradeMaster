@@ -9,4 +9,3 @@ Core engine that orchestrates the trading simulation, managing data flow and str
 
 ## Testing
 - `test_engine.py`: Integration tests for the full execution flow.
-- `test_portfolio.py`: Unit tests for trade execution logic and portfolio value calculations.

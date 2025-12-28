@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
 from datetime import date
-from typing import Dict, Optional
+from typing import Dict
 import pandas as pd
 
 if False:
     # Type checking import to avoid circular dependency at runtime
     from src.backtest.portfolio import BacktestContext
+
 
 class Strategy(ABC):
     """Abstract base class for all trading strategies.

@@ -43,3 +43,8 @@ results/
 data/
 *.db
 *.duckdb
+
+test_results/
+logs
+GEMINI.md
+.gemini/

@@ -4,12 +4,13 @@ import logging
 from src.config.schema import LoggingConfig
 from src.config.logging_config import setup_logging
 
+
 class TestLogging(unittest.TestCase):
     def setUp(self):
         self.log_file = "test_results/test_backtest.log"
         if os.path.exists(self.log_file):
             os.remove(self.log_file)
-            
+
     def tearDown(self):
         # Clean up logger handlers to avoid interference between tests
         root_logger = logging.getLogger()
@@ -30,14 +31,14 @@ class TestLogging(unittest.TestCase):
             console=True
         )
         setup_logging(config)
-        
+
         test_logger = logging.getLogger("test_logger")
         test_message = "Test log message for file creation"
         test_logger.info(test_message)
-        
+
         # Verify file exists
         self.assertTrue(os.path.exists(self.log_file))
-        
+
         # Verify content
         with open(self.log_file, 'r') as f:
             content = f.read()
@@ -51,11 +52,11 @@ class TestLogging(unittest.TestCase):
             console=False
         )
         setup_logging(config)
-        
+
         test_logger = logging.getLogger("test_logger_level")
         test_logger.info("This should NOT be logged")
         test_logger.error("This SHOULD be logged")
-        
+
         with open(self.log_file, 'r') as f:
             content = f.read()
             self.assertNotIn("This should NOT be logged", content)
@@ -64,7 +65,7 @@ class TestLogging(unittest.TestCase):
     def test_load_config_with_logging(self):
         from src.config.settings import load_config
         import yaml
-        
+
         test_config_path = "test_results/test_config.yaml"
         test_data = {
             "start_date": "2023-01-01",
@@ -78,20 +79,21 @@ class TestLogging(unittest.TestCase):
                 "console": False
             }
         }
-        
+
         if not os.path.exists("test_results"):
             os.makedirs("test_results")
-            
+
         with open(test_config_path, 'w') as f:
             yaml.dump(test_data, f)
-            
+
         config = load_config(test_config_path)
         self.assertEqual(config.logging.level, "DEBUG")
         self.assertEqual(config.logging.file_path, self.log_file)
         self.assertFalse(config.logging.console)
-        
+
         if os.path.exists(test_config_path):
             os.remove(test_config_path)
+
 
 if __name__ == '__main__':
     unittest.main()

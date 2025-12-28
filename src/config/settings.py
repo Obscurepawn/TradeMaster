@@ -1,6 +1,5 @@
 import yaml
-from datetime import datetime
-from src.config.schema import BacktestConfig, LoggingConfig
+from src.config.schema import BacktestConfig, LoggingConfig, ProxyConfig
 
 
 def load_config(file_path: str) -> BacktestConfig:
@@ -35,6 +34,15 @@ def load_config(file_path: str) -> BacktestConfig:
             console=log_data.get("console", True),
         )
 
+        # Parse proxy config
+        proxy_data = data.get("proxy", {})
+        proxy_config = ProxyConfig(
+            clash_config_path=proxy_data.get("clash_config_path"),
+            api_url=proxy_data.get("api_url"),
+            api_secret=proxy_data.get("api_secret"),
+            selector_name=proxy_data.get("selector_name", "Proxy"),
+        )
+
         return BacktestConfig(
             start_date=data["start_date"],
             end_date=data["end_date"],
@@ -43,6 +51,8 @@ def load_config(file_path: str) -> BacktestConfig:
             baseline=baseline,
             universe=data.get("universe"),
             logging=logging_config,
+            proxy=proxy_config,
+            use_cache=data.get("use_cache", True),
         )
 
     except KeyError as e:

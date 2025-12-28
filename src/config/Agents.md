@@ -9,4 +9,4 @@ Manages the loading, validation, and schema definition for backtest configuratio
 - `logging_config.py`: Provides the `setup_logging` utility to initialize the global logger based on configuration.
 
 ## Testing
-- `test_config.py`: Validates schema enforcement and handling of missing or malformed configuration files.
+- `test_logging.py`: Validates global logger initialization and configuration.

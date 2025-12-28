@@ -7,6 +7,10 @@ Auto-generated from all feature plans. Last updated: 2025-12-28
 - DuckDB (Local file) (001-initial-framework)
 - Python 3.12+ + `matplotlib`, `akshare`, `pandas` (002-enhance-benchmark)
 - DuckDB (for baseline data caching) (002-enhance-benchmark)
+- Python 3.12+ + `requests`, `akshare`, `pyyaml` (006-strengthen-anti-scraping)
+- Python 3.12+ + `pyyaml`, `requests` (007-config-clash-path)
+- Python 3.12+ + `requests`, `pyyaml` (008-integrate-proxy-rotation-in-hook)
+- Python 3.12+ + `requests`, `akshare`, `pyyaml`, `duckdb`, `matplotlib` (009-codebase-cleanup)
 
 - (001-initial-framework)
 
@@ -26,9 +30,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
-- 003-add-documentation: Added Python 3.12+
-- 002-enhance-benchmark: Added Python 3.12+ + `matplotlib`, `akshare`, `pandas`
-- 001-initial-framework: Added Python 3.12+
+- 009-codebase-cleanup: Added Python 3.12+ + `requests`, `akshare`, `pyyaml`, `duckdb`, `matplotlib`
+- 008-integrate-proxy-rotation-in-hook: Added Python 3.12+ + `requests`, `pyyaml`
+- 007-config-clash-path: Added Python 3.12+ + `pyyaml`, `requests`
 
 
 <!-- MANUAL ADDITIONS START -->

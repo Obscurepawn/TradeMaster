@@ -6,6 +6,7 @@ from src.backtest.portfolio import Portfolio
 from src.domain import BacktestResult
 from src.config.schema import BacktestConfig
 
+
 class BacktestContext:
     """Execution context provided to strategies during backtesting.
 
@@ -15,6 +16,7 @@ class BacktestContext:
     Attributes:
         portfolio: The portfolio instance tracking cash and positions.
     """
+
     def __init__(self, portfolio: Portfolio):
         """Initializes the BacktestContext.
 
@@ -37,6 +39,7 @@ class BacktestEngine:
         portfolio: The portfolio instance tracking state.
         context: The context object passed to the strategy.
     """
+
     def __init__(self, config: BacktestConfig, data_source: DataSource, strategy: Strategy):
         """Initializes the BacktestEngine.
 
@@ -65,7 +68,7 @@ class BacktestEngine:
         """
         # 1. Initialize Strategy
         self.strategy.on_init(self.context)
-        
+
         # 2. Pre-fetch all data for the universe
         all_data = {}
         if self.config.universe:
@@ -77,28 +80,28 @@ class BacktestEngine:
         # 3. Execution Loop
         current_date = self.config.start_date
         dates = []
-        
+
         while current_date <= self.config.end_date:
             # Check if this is a trading day for any stock in our universe
             bar_dict = {}
             for code, df in all_data.items():
                 if current_date in df.index:
                     bar_dict[code] = df.loc[current_date]
-            
-            if bar_dict: 
+
+            if bar_dict:
                 # Update portfolio prices
                 for code, bar in bar_dict.items():
                     self.portfolio.update_price(code, bar['close'])
-                
+
                 # Run Strategy
                 self.strategy.on_bar(self.context, bar_dict)
-                
+
                 # Record value
                 self.portfolio.record_daily_value()
                 dates.append(current_date)
-            
+
             current_date += timedelta(days=1)
-            
+
         # 4. Generate Baselines
         baselines_results = {}
         for b_code in self.config.baseline:
@@ -112,14 +115,14 @@ class BacktestEngine:
 
         # 5. Generate Result
         total_ret = (self.portfolio.total_value - self.config.initial_cash) / self.config.initial_cash
-        
+
         # Normalize strategy equity curve
         normalized_equity = [v / self.config.initial_cash for v in self.portfolio.history]
 
         return BacktestResult(
             total_return=total_ret,
-            max_drawdown=0.0, # Placeholder
-            sharpe_ratio=0.0, # Placeholder
+            max_drawdown=0.0,  # Placeholder
+            sharpe_ratio=0.0,  # Placeholder
             equity_curve=normalized_equity,
             baselines=baselines_results,
             dates=dates

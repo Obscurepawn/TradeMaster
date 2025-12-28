@@ -1,6 +1,7 @@
 from typing import Dict, List
 from src.domain import Position, Trade, TradeDirection
 
+
 class Portfolio:
     """Tracks cash, positions, and trade history for a backtest.
 
@@ -10,6 +11,7 @@ class Portfolio:
         trades: List of all executed Trade objects.
         history: Historical record of total portfolio value.
     """
+
     def __init__(self, initial_cash: float):
         """Initializes the Portfolio.
 
@@ -55,7 +57,7 @@ class Portfolio:
         """
         self.trades.append(trade)
         total_cost = trade.cost
-        
+
         if trade.direction == TradeDirection.BUY:
             self.cash -= total_cost
             if trade.code in self.positions:
@@ -68,7 +70,7 @@ class Portfolio:
                 self.positions[trade.code] = Position(
                     code=trade.code,
                     quantity=trade.quantity,
-                    avg_cost=trade.cost / trade.quantity, # approximate unit cost incl comm
+                    avg_cost=trade.cost / trade.quantity,  # approximate unit cost incl comm
                     current_price=trade.price
                 )
         elif trade.direction == TradeDirection.SELL:

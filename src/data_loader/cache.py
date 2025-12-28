@@ -7,6 +7,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
+
 class CacheManager:
     """Manages local storage of market data using DuckDB.
 
@@ -17,6 +18,7 @@ class CacheManager:
         db_path: Filesystem path to the DuckDB database file.
         conn: The active DuckDB connection object.
     """
+
     def __init__(self, db_path: str = "data/market_data.duckdb"):
         """Initializes CacheManager and opens database connection.
 
@@ -26,7 +28,7 @@ class CacheManager:
         self.db_path = db_path
         if not os.path.exists("data"):
             os.makedirs("data")
-            
+
         self.conn = duckdb.connect(self.db_path)
         self.init_schema()
 
@@ -70,7 +72,8 @@ class CacheManager:
             ORDER BY date
         """
         try:
-            df = self.conn.execute(query, [code, start_date, end_date]).fetchdf()
+            df = self.conn.execute(
+                query, [code, start_date, end_date]).fetchdf()
             if not df.empty:
                 df['date'] = pd.to_datetime(df['date']).dt.date
                 df.set_index('date', inplace=True)
@@ -92,7 +95,8 @@ class CacheManager:
         """
         query = "SELECT date FROM empty_dates WHERE code = ? AND date >= ? AND date <= ?"
         try:
-            res = self.conn.execute(query, [code, start_date, end_date]).fetchall()
+            res = self.conn.execute(
+                query, [code, start_date, end_date]).fetchall()
             return [r[0].date() if hasattr(r[0], 'date') else r[0] for r in res]
         except Exception as e:
             logger.error(f"Empty Dates Load Error: {e}")
@@ -107,7 +111,7 @@ class CacheManager:
         """
         if not dates:
             return
-        
+
         try:
             for d in dates:
                 self.conn.execute(
@@ -126,11 +130,11 @@ class CacheManager:
         """
         if df.empty:
             return
-            
+
         # Add code column
         df_to_save = df.reset_index().copy()
         df_to_save['code'] = code
-        
+
         # DuckDB append
         try:
             self.conn.register('temp_df', df_to_save)
