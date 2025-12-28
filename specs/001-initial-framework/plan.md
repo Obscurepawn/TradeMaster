@@ -5,18 +5,18 @@
 
 ## Summary
 
-Implement the core TradeMaster backtesting framework, enabling users to run strategies against historical market data with a single command. Key components include a Configurable Backtest Engine, Robust Data Acquisition (Akshare/Tushare with DuckDB caching and Clash proxy rotation), Strategy Extensibility (Daily frequency), and Results Visualization (Matplotlib).
+Implement the core TradeMaster backtesting framework. Key components include a Configurable Backtest Engine with **Batch Pre-fetching**, Robust Data Acquisition (Akshare with **Incremental DuckDB caching**), **Equal Weight** Strategy Logic, and Multi-Baseline Visualization (Normalized yields).
 
 ## Technical Context
 
 **Language/Version**: Python 3.12+
 **Primary Dependencies**: 
-- `akshare`: Data source
-- `duckdb`: Local data caching
-- `matplotlib`: Chart generation
+- `akshare`: Data source (stock hist & index daily em)
+- `duckdb`: Local data caching (Columnar storage)
+- `matplotlib`: Chart generation (Multi-curve support)
 - `pyyaml`: Configuration parsing
 - `requests`: HTTP hooks
-**Storage**: DuckDB (Local file)
+**Storage**: DuckDB (Incremental loading)
 **Testing**: `unittest` (Standard Lib)
 **Target Platform**: Linux (Development), Cross-platform (Usage)
 **Project Type**: Single CLI Application

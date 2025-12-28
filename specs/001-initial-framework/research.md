@@ -2,16 +2,20 @@
 
 ## Decisions & Rationale
 
-### 1. Data Storage: DuckDB
-- **Decision**: Use DuckDB for local disk caching of daily stock data.
+### 1. Data Storage & Loading: Incremental DuckDB
+- **Decision**: Use DuckDB with **Incremental Filling** and **Batch Pre-fetching**.
 - **Rationale**: 
-    - **Performance**: Columnar storage is optimized for time-series analytical queries (e.g., "Get all closes for Stock X in Range Y").
-    - **Efficiency**: Better compression than CSV/JSON.
-    - **Usability**: Single-file database (easier than setting up Postgres/MySQL for a local tool).
-- **Alternatives Considered**: 
-    - *CSV*: Too slow for parsing large datasets, no query capability.
-    - *SQLite*: Good, but DuckDB is faster for OLAP-style workloads (backtesting).
-    - *Pickle*: Python-version dependent and security risk.
+    - **Efficiency**: Fetching data once per backtest range instead of once per day reduces overhead.
+    - **Robustness**: Incremental filling handles partial cache hits by only downloading missing date ranges (prefix/suffix).
+    - **Performance**: Columnar storage is optimized for time-series analytical queries.
+
+### 2. Strategy Logic: Equal Weight
+- **Decision**: Default to an **Equal Weight** allocation strategy.
+- **Rationale**: Ensures meaningful impact of stock performance on the total account value, avoiding low capital utilization (the "1000 shares" issue).
+
+### 3. Baseline Normalization
+- **Decision**: Normalize all curves (Strategy and multiple Baselines) to start at **1.0**.
+- **Rationale**: Enables direct visual comparison of relative yield regardless of initial price or cash levels.
 
 ### 2. Charting Library: Matplotlib
 - **Decision**: Use Matplotlib for generating backtest result charts.

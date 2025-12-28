@@ -13,38 +13,26 @@
 - Q: How should the Clash configuration file path be provided to the system? → A: Environment Variable (CLASH_CONFIG_PATH)
 - Q: Which library should be used for interactive charting? → A: Matplotlib
 - Q: How should the proxy node be selected during proactive rotation? → A: Randomly
+- Q: How should capital be allocated? → A: Equal Weight (Fixed slots, e.g., 5 positions)
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Backtesting Configuration & Execution (Priority: P1)
 
-The developer defines a backtest configuration via a YAML file, specifying the data source, market, time range, strategy, and benchmarks. They then execute a shell script to run the backtest, which downloads data, runs the strategy logic, and generates a results chart.
-
-**Why this priority**: This is the core MVP loop. Without this, there is no backtesting framework.
-
-**Independent Test**:
-1. Create a `config_mvp.yaml` with a simple "Small Market Cap" strategy and "沪深300" benchmark.
-2. Run the execution script.
-3. Verify that data is downloaded (or cached), the backtest runs without error, and a chart file is generated in a `.gitignore`d directory.
+The developer defines a backtest configuration via a YAML file, specifying the data source, market, time range, strategy, and **baselines** (multiple supported). They then execute a shell script to run the backtest, which downloads data (incremental), runs the strategy logic (**Equal Weight**), and generates a results chart.
 
 **Acceptance Scenarios**:
-1. **Given** a valid YAML config and internet access, **When** the script is run, **Then** it proceeds through Data Download -> Backtest -> Plotting without crashing.
-2. **Given** an invalid YAML config (missing fields), **When** the script is run, **Then** it exits immediately with a clear error message.
-3. **Given** a strategy requiring specific data fields, **When** the data source schema does not match, **Then** the system throws an error immediately.
+1. **Given** a valid YAML config with multiple baselines, **When** the script is run, **Then** it fetches data for all indices and strategy stocks without redundant downloads.
+2. **Given** an invalid YAML config, **When** the script is run, **Then** it exits with a clear error message.
 
 ---
 
 ### User Story 2 - Interactive Results Visualization (Priority: P2)
 
-The developer views the generated backtest results as an interactive chart where they can hover over points to see exact values for the strategy and benchmark yields against time.
-
-**Why this priority**: Quantitative analysis requires precise inspection of data points, not just a static image.
-
-**Independent Test**: Open the generated HTML/interactive chart file in a browser and verify tooltips appear on hover.
+The developer views the generated backtest results as a chart where they can compare the strategy yield against multiple **baselines**, all normalized to start at 1.0.
 
 **Acceptance Scenarios**:
-1. **Given** a completed backtest, **When** the user opens the result chart, **Then** the X-axis shows time, Y-axis shows yield.
-2. **Given** the chart is displayed, **When** the mouse hovers over a data point, **Then** a tooltip displays the date and yield value.
+1. **Given** a completed backtest, **When** the user opens the result chart, **Then** the X-axis shows time, Y-axis shows **Normalized Yield**, and a legend distinguishes all curves.
 
 ---
 
@@ -110,10 +98,10 @@ The system automatically handles anti-scraping measures by routing requests thro
 
 ### Functional Requirements
 
-- **FR-001**: System MUST accept a YAML configuration file defining Source, Market, Time Range, Strategy, and Benchmarks.
-- **FR-002**: System MUST support `Akshare` and `Tushare` as data sources (via an abstraction layer).
-- **FR-003**: System MUST execute the full backtest workflow: Data Fetch -> Strategy Execution -> Result Visualization.
-- **FR-004**: System MUST generate an interactive chart using **Matplotlib** (e.g., via interactive backend or basic HTML export) showing Strategy vs. Benchmark yields over time.
+- **FR-001**: System MUST accept a YAML configuration file defining Source, Market, Time Range, Strategy, and **Baselines** (List supported).
+- **FR-002**: System MUST support `Akshare` as the data source with **Incremental Filling** capability.
+- **FR-003**: System MUST execute the full backtest workflow with **Batch Pre-fetching** optimization.
+- **FR-004**: System MUST generate an interactive chart showing Strategy vs. multiple Baseline yields (all normalized to 1.0).
 - **FR-005**: Results (charts/data) MUST be saved in a directory ignored by git.
 - **FR-006**: System MUST implement a global HTTP request hook to spoof User-Agent headers and mimic browser behavior.
 - **FR-007**: System MUST implement local disk caching for data using **DuckDB** (Granularity: Stock/Day or Report/Quarter).
