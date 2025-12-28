@@ -1,7 +1,11 @@
+import logging
 import duckdb
 import pandas as pd
 from datetime import date
+from typing import List
 import os
+
+logger = logging.getLogger(__name__)
 
 class CacheManager:
     """Manages local storage of market data using DuckDB.
@@ -27,7 +31,7 @@ class CacheManager:
         self.init_schema()
 
     def init_schema(self):
-        """Creates the daily_bars table if it does not already exist."""
+        """Creates the necessary tables if they do not already exist."""
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS daily_bars (
                 code VARCHAR,
@@ -37,6 +41,13 @@ class CacheManager:
                 low DOUBLE,
                 close DOUBLE,
                 volume DOUBLE,
+                PRIMARY KEY (code, date)
+            )
+        """)
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS empty_dates (
+                code VARCHAR,
+                date DATE,
                 PRIMARY KEY (code, date)
             )
         """)
@@ -65,8 +76,46 @@ class CacheManager:
                 df.set_index('date', inplace=True)
             return df
         except Exception as e:
-            print(f"Cache Load Error: {e}")
+            logger.error(f"Cache Load Error: {e}")
             return pd.DataFrame()
+
+    def load_empty_dates(self, code: str, start_date: date, end_date: date) -> List[date]:
+        """Loads dates known to have no data for a specific security.
+
+        Args:
+            code: The security symbol.
+            start_date: Beginning of the range.
+            end_date: End of the range.
+
+        Returns:
+            A list of date objects.
+        """
+        query = "SELECT date FROM empty_dates WHERE code = ? AND date >= ? AND date <= ?"
+        try:
+            res = self.conn.execute(query, [code, start_date, end_date]).fetchall()
+            return [r[0].date() if hasattr(r[0], 'date') else r[0] for r in res]
+        except Exception as e:
+            logger.error(f"Empty Dates Load Error: {e}")
+            return []
+
+    def save_empty_dates(self, code: str, dates: List[date]):
+        """Records dates that have been confirmed to have no market data.
+
+        Args:
+            code: The security symbol.
+            dates: List of dates to record as empty.
+        """
+        if not dates:
+            return
+        
+        try:
+            for d in dates:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO empty_dates (code, date) VALUES (?, ?)",
+                    [code, d]
+                )
+        except Exception as e:
+            logger.error(f"Empty Dates Save Error: {e}")
 
     def save_daily_bars(self, code: str, df: pd.DataFrame):
         """Persists bar data to the database, ignoring duplicates.
@@ -91,7 +140,7 @@ class CacheManager:
             """)
             self.conn.unregister('temp_df')
         except Exception as e:
-            print(f"Cache Save Error: {e}")
+            logger.error(f"Cache Save Error: {e}")
 
     def close(self):
         """Closes the DuckDB connection."""

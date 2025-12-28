@@ -1,7 +1,7 @@
 # Backtest Agent Context
 
 ## Responsibility
-Core engine that orchestrates the trading simulation, managing data flow and strategy execution.
+Core engine that orchestrates the trading simulation, managing data flow and strategy execution. All execution events are recorded via the global logging system.
 
 ## Implementation
 - `engine.py`: Orchestrates the main backtest loop, data pre-fetching, and results aggregation. Fully documented with Google Style docstrings.

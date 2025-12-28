@@ -1,16 +1,20 @@
 import sys
 import argparse
+import logging
 from src.config.settings import load_config
+from src.config.logging_config import setup_logging
 from src.data_loader.akshare_loader import AkshareLoader
 from src.backtest.engine import BacktestEngine
 from src.drawing.plotter import Plotter
 from src.strategy.pe_small_cap import PESmallCapStrategy
 
+logger = logging.getLogger(__name__)
+
 # Simple Dummy Strategy for MVP if PE not ready
 from src.contracts.interfaces import Strategy
 class RandomPickStrategy(Strategy):
     def on_init(self, context):
-        print("Strategy Initialized")
+        logger.info("Strategy Initialized")
     def on_bar(self, context, bar_dict):
         pass
 
@@ -25,9 +29,10 @@ def main():
     This function orchestrates the following workflow:
     1. Parses command-line arguments.
     2. Loads the backtest configuration from YAML.
-    3. Initializes the data loader and selected strategy.
-    4. Executes the backtest engine.
-    5. Displays the total return and plots performance results.
+    3. Initializes logging.
+    4. Initializes the data loader and selected strategy.
+    5. Executes the backtest engine.
+    6. Displays the total return and plots performance results.
     """
     parser = argparse.ArgumentParser(description="TradeMaster Backtest CLI")
     parser.add_argument("--config", type=str, required=True, help="Path to config.yaml")
@@ -35,7 +40,9 @@ def main():
 
     try:
         config = load_config(args.config)
-        print(f"Loaded config for strategy: {config.strategy_name}")
+        setup_logging(config.logging)
+        
+        logger.info(f"Loaded config for strategy: {config.strategy_name}")
         
         loader = AkshareLoader()
         
@@ -47,16 +54,17 @@ def main():
         strategy = strategy_class()
         
         engine = BacktestEngine(config, loader, strategy)
-        print("Starting Backtest...")
+        logger.info("Starting Backtest...")
         result = engine.run()
         
-        print(f"Backtest Completed. Total Return: {result.total_return:.2%}")
+        logger.info(f"Backtest Completed. Total Return: {result.total_return:.2%}")
         
         plotter = Plotter()
         plotter.plot_result(result)
         
     except Exception as e:
-        print(f"Error: {e}")
+        # Fallback print if logger failed or not initialized
+        print(f"CRITICAL ERROR: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

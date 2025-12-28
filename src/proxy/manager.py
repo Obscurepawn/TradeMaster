@@ -1,8 +1,11 @@
+import logging
 import os
 import yaml
 import random
 import requests
 from typing import List, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 class ProxyManager:
     """Manages proxy rotation by interacting with a local Clash instance.
@@ -30,16 +33,16 @@ class ProxyManager:
     def load_proxies(self):
         """Loads proxy definitions from the specified YAML config file."""
         if not self.config_path or not os.path.exists(self.config_path):
-            print("No Clash config found. Proxy disabled.")
+            logger.warning("No Clash config found. Proxy disabled.")
             return
 
         try:
             with open(self.config_path, 'r') as f:
                 data = yaml.safe_load(f)
                 self.proxies = data.get('proxies', [])
-                print(f"Loaded {len(self.proxies)} proxies from {self.config_path}")
+                logger.info(f"Loaded {len(self.proxies)} proxies from {self.config_path}")
         except Exception as e:
-            print(f"Error loading proxy config: {e}")
+            logger.error(f"Error loading proxy config: {e}")
 
     def rotate_proxy(self, selector_name: str = "Proxy"):
         """Randomly selects a proxy node and instructs Clash to switch to it.
@@ -52,17 +55,17 @@ class ProxyManager:
 
         node = random.choice(self.proxies)
         node_name = node['name']
-        
+
         try:
             # Clash External Controller API
             url = f"{self.controller_url}/proxies/{selector_name}"
             payload = {"name": node_name}
-            
+
             # Use a short timeout to prevent hanging
             resp = requests.put(url, json=payload, timeout=2)
             if resp.status_code == 204:
                 pass
             else:
-                print(f"Failed to rotate proxy. Status: {resp.status_code}")
+                logger.error(f"Failed to rotate proxy. Status: {resp.status_code}")
         except Exception as e:
-            pass
+            logger.debug(f"Clash API call failed (probably not running): {e}")

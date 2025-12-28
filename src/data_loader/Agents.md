@@ -1,7 +1,7 @@
 # Data Loader Agent Context
 
 ## Responsibility
-Provides a unified interface for fetching market data from external sources and managing a local persistent cache.
+Provides a unified interface for fetching market data from external sources and managing a local persistent cache. Logs all remote fetch and cache operations.
 
 ## Implementation
 - `base.py`: Defines the `DataSource` abstract base class.

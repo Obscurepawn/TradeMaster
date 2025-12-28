@@ -1,7 +1,7 @@
 # Strategy Agent Context
 
 ## Responsibility
-Defines the abstract interface and concrete implementations for trading strategies.
+Defines the abstract interface and concrete implementations for trading strategies. Strategies use the global logger to record initialization and trade signals (BUY/SELL).
 
 ## Implementation
 - `base.py`: Provides `BaseStrategy` inheriting from the core `Strategy` interface, offering a foundation for concrete implementations.

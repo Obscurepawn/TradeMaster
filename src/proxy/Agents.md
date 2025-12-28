@@ -1,7 +1,7 @@
 # Proxy Agent Context
 
 ## Responsibility
-Provides infrastructure for bypassing rate limits and anti-scraping mechanisms during data acquisition.
+Provides infrastructure for bypassing rate limits and anti-scraping mechanisms. Logs proxy rotation events and API failures.
 
 ## Implementation
 - `manager.py`: Communicates with a local Clash instance via its External Controller API to rotate proxy nodes.
