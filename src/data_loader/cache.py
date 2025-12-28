@@ -4,7 +4,21 @@ from datetime import date
 import os
 
 class CacheManager:
+    """Manages local storage of market data using DuckDB.
+
+    This class handles database connection, schema initialization, and
+    CRUD operations for daily bar data.
+
+    Attributes:
+        db_path: Filesystem path to the DuckDB database file.
+        conn: The active DuckDB connection object.
+    """
     def __init__(self, db_path: str = "data/market_data.duckdb"):
+        """Initializes CacheManager and opens database connection.
+
+        Args:
+            db_path: Path to the .duckdb file.
+        """
         self.db_path = db_path
         if not os.path.exists("data"):
             os.makedirs("data")
@@ -13,6 +27,7 @@ class CacheManager:
         self.init_schema()
 
     def init_schema(self):
+        """Creates the daily_bars table if it does not already exist."""
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS daily_bars (
                 code VARCHAR,
@@ -27,6 +42,16 @@ class CacheManager:
         """)
 
     def load_daily_bars(self, code: str, start_date: date, end_date: date) -> pd.DataFrame:
+        """Queries the database for bar data in a specific date range.
+
+        Args:
+            code: The security symbol.
+            start_date: Beginning of the range (inclusive).
+            end_date: End of the range (inclusive).
+
+        Returns:
+            A pandas DataFrame with the results.
+        """
         query = """
             SELECT date, open, high, low, close, volume 
             FROM daily_bars 
@@ -44,14 +69,18 @@ class CacheManager:
             return pd.DataFrame()
 
     def save_daily_bars(self, code: str, df: pd.DataFrame):
+        """Persists bar data to the database, ignoring duplicates.
+
+        Args:
+            code: The security symbol.
+            df: A pandas DataFrame containing OHLCV data with a date index.
+        """
         if df.empty:
             return
             
         # Add code column
         df_to_save = df.reset_index().copy()
         df_to_save['code'] = code
-        # Ensure columns match schema order/names
-        # Assuming df has 'date' from reset_index, and OHLCV columns
         
         # DuckDB append
         try:
@@ -65,4 +94,5 @@ class CacheManager:
             print(f"Cache Save Error: {e}")
 
     def close(self):
+        """Closes the DuckDB connection."""
         self.conn.close()

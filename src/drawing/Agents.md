@@ -1,10 +1,11 @@
 # Drawing Agent Context
 
 ## Responsibility
-Visualizes backtest results.
+Visualizes backtest performance metrics and comparative benchmarks.
 
 ## Implementation
-- `plotter.py`: Uses Matplotlib to draw Equity Curve and multiple baseline comparisons. Automatically adds a legend and normalizes yield starting at 1.0.
+- `plotter.py`: Generates comparative line charts for equity curves and multiple baselines using Matplotlib. Output is saved to the `results/` directory.
+- Public methods are fully documented with Google Style docstrings.
 
 ## Testing
-- Verify output file creation.
+- `test_plotter.py`: Verifies that charts are correctly generated and saved to the filesystem.

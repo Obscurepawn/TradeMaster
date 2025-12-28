@@ -1,11 +1,13 @@
 # Proxy Agent Context
 
 ## Responsibility
-Manages anti-scraping measures (IP rotation, User-Agent spoofing).
+Provides infrastructure for bypassing rate limits and anti-scraping mechanisms during data acquisition.
 
 ## Implementation
-- `manager.py`: Interfaces with Clash API/Config to switch nodes.
-- `hook.py`: `requests` middleware for headers.
+- `manager.py`: Communicates with a local Clash instance via its External Controller API to rotate proxy nodes.
+- `hook.py`: Provides `requests.Session` configuration and headers management (including random User-Agents).
+- Fully documented with Google Style docstrings.
 
 ## Testing
-- `test_manager.py`: Mock Clash config parsing.
+- `test_manager.py`: Verifies Clash configuration parsing.
+- `test_hook.py`: Ensures session configuration and header generation logic.

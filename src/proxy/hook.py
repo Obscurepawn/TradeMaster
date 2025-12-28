@@ -9,30 +9,89 @@ USER_AGENTS = [
 ]
 
 class RequestHook:
+
+    """Provides utility methods for configuring network requests with headers and proxies.
+
+
+
+    Attributes:
+
+        proxy_manager: The ProxyManager instance used for rotation.
+
+    """
+
     def __init__(self, proxy_manager: ProxyManager):
+
+        """Initializes RequestHook.
+
+
+
+        Args:
+
+            proxy_manager: Instance for managing proxy state.
+
+        """
+
         self.proxy_manager = proxy_manager
 
+
+
     def get_headers(self) -> dict:
+
+        """Generates a random User-Agent header.
+
+
+
+        Returns:
+
+            A dictionary containing the User-Agent string.
+
+        """
+
         return {
+
             "User-Agent": random.choice(USER_AGENTS)
+
         }
 
+
+
     def before_request(self):
-        """Called before making a request to rotate proxy."""
+
+        """Pre-request hook to trigger proxy rotation."""
+
         self.proxy_manager.rotate_proxy()
+
         
+
     def get_session(self) -> requests.Session:
-        """Returns a configured requests Session."""
+
+        """Creates and configures a requests.Session with headers and proxies.
+
+
+
+        Returns:
+
+            A requests.Session object configured to use the local proxy.
+
+        """
+
         session = requests.Session()
+
         session.headers.update(self.get_headers())
+
         
+
         # Configure local Clash proxy (Standard port 7890)
-        # In a robust system, this port would be configurable.
+
         session.proxies = {
+
             "http": "http://127.0.0.1:7890",
+
             "https": "http://127.0.0.1:7890"
+
         }
+
         
-        # We hook into the session.request logic manually or just call hooks before usage.
-        # For simplicity, we assume the caller calls before_request explicitly or we subclass Session.
+
         return session

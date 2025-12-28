@@ -26,9 +26,9 @@ tests/
 : Follow standard conventions
 
 ## Recent Changes
+- 003-add-documentation: Added Python 3.12+
 - 002-enhance-benchmark: Added Python 3.12+ + `matplotlib`, `akshare`, `pandas`
 - 001-initial-framework: Added Python 3.12+
-- 001-initial-framework: Added Python 3.12+ (Shell scripts: Bash) + `unittest` (standard lib) for testing.
 
 
 <!-- MANUAL ADDITIONS START -->

@@ -1,11 +1,12 @@
 # Strategy Agent Context
 
 ## Responsibility
-Contains trading strategy logic and base classes.
+Defines the abstract interface and concrete implementations for trading strategies.
 
 ## Implementation
-- `base.py`: `Strategy` abstract base class.
-- `pe_small_cap.py`: Example strategy implementation.
+- `base.py`: Provides `BaseStrategy` inheriting from the core `Strategy` interface, offering a foundation for concrete implementations.
+- `pe_small_cap.py`: A concrete implementation of a Value/Small-Cap strategy using equal-weight position sizing.
+- All classes and methods are documented using Google Style docstrings.
 
 ## Testing
-- Unit test strategy logic with mock data.
+- `test_strategy.py`: Verifies signal generation logic and bar-processing behavior using mock data.

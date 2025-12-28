@@ -1,13 +1,12 @@
 # Config Agent Context
 
 ## Responsibility
-Handles loading and validation of the configuration file.
+Manages the loading, validation, and schema definition for backtest configuration.
 
 ## Implementation
-- `settings.py`: Loads YAML and provides a typed Config object. Supports renamed `baseline` parameter (formerly `benchmark`) as a list.
-- `schema.py`: Defines the expected structure, supporting multiple baselines.
+- `settings.py`: Orchestrates YAML loading and provides the `load_config` utility.
+- `schema.py`: Defines the `BacktestConfig` data structure with type hints for all parameters (start_date, end_date, universe, etc.).
+- Orchestration logic is documented via Google Style docstrings.
 
 ## Testing
-- Verify invalid YAML throws errors.
-- Verify missing fields throw validation errors.
-- Verify environment variable substitution (if applicable).
+- `test_config.py`: Validates schema enforcement and handling of missing or malformed configuration files.

@@ -6,12 +6,25 @@ from src.data_loader.cache import CacheManager
 from src.proxy.manager import ProxyManager
 
 class AkshareLoader(DataSource):
+    """Data loader implementation using the Akshare library.
+
+    This loader fetches A-share market data and indices, incorporating
+    local caching via CacheManager and proxy rotation via ProxyManager.
+    """
     def __init__(self):
+        """Initializes the AkshareLoader with cache and proxy managers."""
         self.cache = CacheManager()
         self.proxy_manager = ProxyManager()
 
     def _fetch_remote_and_save(self, code: str, start_date: date, end_date: date, is_index: bool = False):
-        """内部辅助方法：下载并保存数据"""
+        """Internal helper to download and persist data.
+
+        Args:
+            code: The security or index symbol.
+            start_date: Beginning of the fetch range.
+            end_date: End of the fetch range.
+            is_index: Whether the symbol represents an index.
+        """
         if start_date > end_date:
             return
 
@@ -45,32 +58,52 @@ class AkshareLoader(DataSource):
             print(f"Error fetching {code}: {e}")
 
     def get_daily_bars(self, code: str, start_date: date, end_date: date) -> pd.DataFrame:
-        # 1. 尝试从缓存加载
+        """Retrieves daily bar data, checking cache first and fetching gaps.
+
+        Args:
+            code: The stock symbol.
+            start_date: The start date for the data range.
+            end_date: The end date for the data range.
+
+        Returns:
+            A pandas DataFrame containing OHLCV data.
+        """
+        # 1. Try loading from cache
         cached_df = self.cache.load_daily_bars(code, start_date, end_date)
         
         if cached_df.empty:
-            # 全量下载
+            # Full fetch
             self._fetch_remote_and_save(code, start_date, end_date)
         else:
             cache_min = cached_df.index.min()
             cache_max = cached_df.index.max()
             
-            # 2. 检查并填充前缀 (如果请求的开始日期更早)
+            # 2. Check and fill prefix
             if start_date < cache_min:
                 self._fetch_remote_and_save(code, start_date, cache_min - timedelta(days=1))
             
-            # 3. 检查并填充后缀 (如果请求的结束日期更晚)
+            # 3. Check and fill suffix
             if end_date > cache_max:
                 self._fetch_remote_and_save(code, cache_max + timedelta(days=1), end_date)
         
-        # 4. 从缓存返回最终结果 (包含新补全的数据)
+        # 4. Return final result from cache
         final_df = self.cache.load_daily_bars(code, start_date, end_date)
         if not final_df.empty:
             print(f"[Cache] Successfully loaded {code} ({start_date} - {end_date})")
         return final_df
 
     def get_index_daily(self, code: str, start_date: date, end_date: date) -> pd.DataFrame:
-        # 同样的增量逻辑应用到指数获取
+        """Retrieves daily index data with incremental loading.
+
+        Args:
+            code: The index symbol.
+            start_date: The start date for the data range.
+            end_date: The end date for the data range.
+
+        Returns:
+            A pandas DataFrame containing index data.
+        """
+        # Same incremental logic applied to indices
         cached_df = self.cache.load_daily_bars(code, start_date, end_date)
         
         if cached_df.empty:

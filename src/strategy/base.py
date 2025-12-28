@@ -1,24 +1,25 @@
-from abc import ABC, abstractmethod
-from datetime import date
-from typing import List, Dict
-from src.domain import TradeSignal
-from src.data_loader.base import DataLoader
+from src.contracts.interfaces import Strategy
 
-class Strategy(ABC):
-    def __init__(self, data_loader: DataLoader, capital: float):
-        self.data_loader = data_loader
-        self.capital = capital
+class BaseStrategy(Strategy):
+    """Base class for strategy implementations with common utilities.
 
-    @abstractmethod
-    def select_stocks(self, current_date: date) -> List[str]:
-        """
-        Logic for stock picking.
+    This class can be extended to provide shared functionality across different
+    trading strategies, such as position sizing or common technical indicators.
+    """
+    
+    def on_init(self, context):
+        """Default initialization.
+        
+        Args:
+            context: The backtest execution context.
         """
         pass
 
-    @abstractmethod
-    def on_bar(self, current_date: date, positions: Dict[str, int], cash: float, total_equity: float) -> List[TradeSignal]:
-        """
-        Called daily.
+    def on_bar(self, context, bar_dict):
+        """Default bar processing logic.
+
+        Args:
+            context: Access to account state and order API.
+            bar_dict: Dictionary of daily market data bars.
         """
         pass

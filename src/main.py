@@ -20,6 +20,15 @@ STRATEGY_MAP = {
 }
 
 def main():
+    """Main entry point for the TradeMaster Backtest CLI.
+
+    This function orchestrates the following workflow:
+    1. Parses command-line arguments.
+    2. Loads the backtest configuration from YAML.
+    3. Initializes the data loader and selected strategy.
+    4. Executes the backtest engine.
+    5. Displays the total return and plots performance results.
+    """
     parser = argparse.ArgumentParser(description="TradeMaster Backtest CLI")
     parser.add_argument("--config", type=str, required=True, help="Path to config.yaml")
     args = parser.parse_args()

@@ -7,12 +7,44 @@ from src.domain import BacktestResult
 from src.config.schema import BacktestConfig
 
 class BacktestContext:
+    """Execution context provided to strategies during backtesting.
+
+    This class acts as the primary interface for strategies to interact with the
+    account state and market operations.
+
+    Attributes:
+        portfolio: The portfolio instance tracking cash and positions.
+    """
     def __init__(self, portfolio: Portfolio):
+        """Initializes the BacktestContext.
+
+        Args:
+            portfolio: The Portfolio instance to be managed by this context.
+        """
         self.portfolio = portfolio
-        # Add API methods for strategy here (e.g., self.buy, self.sell)
+
 
 class BacktestEngine:
+    """Orchestrates the backtest execution loop.
+
+    The engine handles data loading, strategy initialization, and iterating
+    through the historical timeline to simulate trading.
+
+    Attributes:
+        config: Configuration settings for the backtest.
+        data_loader: The data source used to fetch historical market data.
+        strategy: The trading strategy being evaluated.
+        portfolio: The portfolio instance tracking state.
+        context: The context object passed to the strategy.
+    """
     def __init__(self, config: BacktestConfig, data_source: DataSource, strategy: Strategy):
+        """Initializes the BacktestEngine.
+
+        Args:
+            config: Backtest configuration (dates, universe, cash, etc.).
+            data_source: Implementation of the DataSource interface.
+            strategy: Implementation of the Strategy interface.
+        """
         self.config = config
         self.data_loader = data_source
         self.strategy = strategy
@@ -20,6 +52,17 @@ class BacktestEngine:
         self.context = BacktestContext(self.portfolio)
 
     def run(self) -> BacktestResult:
+        """Executes the backtest simulation.
+
+        This method performs the following steps:
+        1. Initializes the strategy.
+        2. Fetches historical data for all symbols in the universe.
+        3. Iterates through the date range, updating prices and calling on_bar.
+        4. Calculates performance metrics and baselines.
+
+        Returns:
+            A BacktestResult object containing performance summary and curves.
+        """
         # 1. Initialize Strategy
         self.strategy.on_init(self.context)
         
