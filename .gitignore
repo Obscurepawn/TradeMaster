@@ -1,7 +1,45 @@
-nohup.out
-*.log
+# Python
+__pycache__/
 *.pyc
-logs
-*.csv
-*demo*
-temp
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.git
+.mypy_cache
+.pytest_cache
+.hypotheses
+
+# Distribution / Packaging
+dist/
+build/
+*.egg-info/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IDEs
+.vscode/
+.idea/
+
+# Local Config
+config.yaml
+*.env
+
+# TradeMaster
+results/
+data/
+*.db
+*.duckdb

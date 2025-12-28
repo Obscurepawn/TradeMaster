@@ -1,0 +1,7 @@
+start_date: 2023-01-01
+end_date: 2023-02-01
+initial_cash: 100000.0
+strategy_name: PESmallCap
+benchmark: sh000300
+universe:
+  - sh600000

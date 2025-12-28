@@ -1,0 +1,5 @@
+akshare
+duckdb
+matplotlib
+pyyaml
+requests
