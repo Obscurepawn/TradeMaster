@@ -8,10 +8,15 @@ class Plotter:
             os.makedirs(output_dir)
             
         plt.figure(figsize=(10, 6))
-        plt.plot(result.dates, result.equity_curve, label="Strategy Equity")
-        plt.title("Backtest Equity Curve")
+        plt.plot(result.dates, result.equity_curve, label="Strategy Equity", linewidth=2)
+        
+        # Plot baselines
+        for code, curve in result.baselines.items():
+            plt.plot(result.dates, curve, label=code, linestyle='--')
+
+        plt.title("Backtest Performance Comparison")
         plt.xlabel("Date")
-        plt.ylabel("Total Value")
+        plt.ylabel("Normalized Yield")
         plt.legend()
         plt.grid(True)
         

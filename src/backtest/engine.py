@@ -23,26 +23,26 @@ class BacktestEngine:
         # 1. Initialize Strategy
         self.strategy.on_init(self.context)
         
-        # 2. Fetch Data (Simplification: Fetch all upfront or lazy load)
-        # For simplicity, we assume the Universe is defined or we fetch as we go.
-        # But for iteration, we need a date range.
+        # 2. Pre-fetch all data for the universe
+        all_data = {}
+        if self.config.universe:
+            for code in self.config.universe:
+                df = self.data_loader.get_daily_bars(code, self.config.start_date, self.config.end_date)
+                if not df.empty:
+                    all_data[code] = df
+
+        # 3. Execution Loop
         current_date = self.config.start_date
         dates = []
         
         while current_date <= self.config.end_date:
-            # 3. Check if trading day (Simplification: check if data exists)
-            # In a real engine, we'd have a Calendar.
-            # Here, we might query the Benchmark to see if it's a valid date.
-            
-            # Fetch daily bars for universe
+            # Check if this is a trading day for any stock in our universe
             bar_dict = {}
-            if self.config.universe:
-                for code in self.config.universe:
-                    df = self.data_loader.get_daily_bars(code, current_date, current_date)
-                    if not df.empty:
-                        bar_dict[code] = df.iloc[0] # Series
+            for code, df in all_data.items():
+                if current_date in df.index:
+                    bar_dict[code] = df.loc[current_date]
             
-            if bar_dict: # If data exists for this day
+            if bar_dict: 
                 # Update portfolio prices
                 for code, bar in bar_dict.items():
                     self.portfolio.update_price(code, bar['close'])
@@ -56,13 +56,28 @@ class BacktestEngine:
             
             current_date += timedelta(days=1)
             
-        # 4. Generate Result
+        # 4. Generate Baselines
+        baselines_results = {}
+        for b_code in self.config.baseline:
+            b_df = self.data_loader.get_index_daily(b_code, self.config.start_date, self.config.end_date)
+            if not b_df.empty:
+                # Align with actual backtest dates (filter or reindex)
+                b_series = b_df['close'].reindex(dates).ffill()
+                # Normalize: divide by first available value
+                first_val = b_series.dropna().iloc[0] if not b_series.dropna().empty else 1.0
+                baselines_results[b_code] = (b_series / first_val).tolist()
+
+        # 5. Generate Result
         total_ret = (self.portfolio.total_value - self.config.initial_cash) / self.config.initial_cash
         
+        # Normalize strategy equity curve
+        normalized_equity = [v / self.config.initial_cash for v in self.portfolio.history]
+
         return BacktestResult(
             total_return=total_ret,
             max_drawdown=0.0, # Placeholder
             sharpe_ratio=0.0, # Placeholder
-            equity_curve=self.portfolio.history,
+            equity_curve=normalized_equity,
+            baselines=baselines_results,
             dates=dates
         )

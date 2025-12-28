@@ -8,12 +8,19 @@ def load_config(file_path: str) -> BacktestConfig:
     
     # Basic validation and type conversion
     try:
+        baseline = data.get('baseline')
+        if baseline is None:
+            raise KeyError('baseline')
+            
+        if isinstance(baseline, str):
+            baseline = [baseline]
+
         return BacktestConfig(
-            start_date=data['start_date'], # yaml parser handles YYYY-MM-DD as date objects usually, or we parse
+            start_date=data['start_date'],
             end_date=data['end_date'],
             initial_cash=float(data['initial_cash']),
             strategy_name=data['strategy_name'],
-            benchmark=data['benchmark'],
+            baseline=baseline,
             universe=data.get('universe')
         )
     except KeyError as e:

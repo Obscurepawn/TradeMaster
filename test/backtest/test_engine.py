@@ -15,7 +15,7 @@ class TestBacktestEngine(unittest.TestCase):
             end_date=date(2023, 1, 2),
             initial_cash=10000.0,
             strategy_name="TestStrategy",
-            benchmark="sh000300",
+            baseline=["sh000300"],
             universe=["sh600000"]
         )
         
@@ -47,10 +47,10 @@ class TestBacktestEngine(unittest.TestCase):
         
         # Verify Portfolio updated
         # End price is 11.0. No trades were made (Strategy mock does nothing), so cash is 10000.
-        # Total value should be 10000.
+        # Total value should be 10000, normalized to 1.0.
         self.assertEqual(result.total_return, 0.0)
         self.assertEqual(len(result.equity_curve), 2)
-        self.assertEqual(result.equity_curve[-1], 10000.0)
+        self.assertEqual(result.equity_curve[-1], 1.0)
 
 if __name__ == '__main__':
     unittest.main()

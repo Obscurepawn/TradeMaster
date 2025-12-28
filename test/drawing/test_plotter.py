@@ -13,6 +13,7 @@ class TestPlotter(unittest.TestCase):
             max_drawdown=0.05,
             sharpe_ratio=1.5,
             equity_curve=[10000.0, 10100.0, 11000.0],
+            baselines={"sh000300": [1.0, 1.01, 1.05]},
             dates=[date(2023,1,1), date(2023,1,2), date(2023,1,3)]
         )
         

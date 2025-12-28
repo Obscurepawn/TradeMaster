@@ -4,7 +4,7 @@
 Core engine that runs the simulation.
 
 ## Implementation
-- `engine.py`: Main loop (Date iteration, Data fetching, Strategy execution).
+- `engine.py`: Main loop (Date iteration, Data fetching, Strategy execution). Now handles fetching and normalization of multiple baselines.
 - `portfolio.py`: Tracks Cash, Positions, and Trades.
 
 ## Testing
