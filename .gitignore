@@ -1,0 +1,15 @@
+/research/
+/data/
+/artifacts/
+/logs/
+/target/
+/.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+.env
+.env.*
