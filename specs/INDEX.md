@@ -2,10 +2,11 @@
 
 ## Active
 
-- [开源仓库发布整理](20260823-open-source-repository-publication.md)
+当前无active spec。
 
 ## Completed
 
+- [开源仓库发布整理](20260823-open-source-repository-publication.md)
 - [M9 二十年全A因子研究与代码熵减](20260823-m9-full-a-20y-factor-evaluation-quality.md)
 - [M8 华泰与国泰君安公开因子库接入](20260823-m8-huatai-gtja-factor-library.md)
 - [M7 因子管理与基本面策略重构](20260823-m7-factor-management-strategy-refactor.md)

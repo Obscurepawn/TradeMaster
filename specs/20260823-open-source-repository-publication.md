@@ -1,6 +1,6 @@
 # 开源仓库发布整理
 
-Status: active
+Status: complete
 Owner: Codex
 Updated: 2026-08-24
 
@@ -43,7 +43,7 @@ Updated: 2026-08-24
 | 整理.gitignore并验证ignore contracts | Codex | completed | 大数据/产物/研究仓库/缓存均命中规则 |
 | 编写README/LICENSE及package metadata | Codex | completed | README、2 SVG、Apache-2.0、wheel metadata |
 | 运行安全、文档、构建和测试门禁 | Codex | completed | 248 Python + Rust/static/package/docs/security PASS |
-| 提交并push origin/main | Codex | in_progress | origin/main已fetch且0 ahead/0 behind |
+| 提交并push origin/main | Codex | completed | baseline `7b12346` fast-forward pushed |
 
 ## 验收标准
 
@@ -53,7 +53,7 @@ Updated: 2026-08-24
 - [x] 两张README SVG通过结构、渲染和局部裁图检查，缩放后文字与连线仍可读；
 - [x] Python/Rust package metadata均声明Apache-2.0且LICENSE全文存在；
 - [x] secret scan、大文件审计、Markdown链接检查、build/test/lint通过；
-- [ ] 本地`main`提交后工作树干净，`origin/main`指向相同提交。
+- [x] 本地`main`提交后工作树干净，`origin/main`指向相同提交。
 
 ## Decisions
 
@@ -99,7 +99,8 @@ Updated: 2026-08-24
   compileall PASS。
 - Rust：fmt、Clippy `-D warnings`、workspace tests与doc tests PASS。
 - Package：`uv build` PASS；隔离venv重装wheel后两个CLI `--help` PASS。
-- Remote：`git fetch origin main`后本地与远端为`0/0`，均指向`fd656a0`。
+- Remote：基线提交`7b12346`已由普通fast-forward push发布到`origin/main`；最终spec闭环提交
+  后再次核验本地与远端commit一致。
 
 ## Open questions
 
