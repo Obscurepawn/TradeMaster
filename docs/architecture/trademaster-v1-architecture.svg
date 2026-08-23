@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">TradeMaster v1 运行时架构</title>
+  <desc id="desc">Tushare 数据经过 Python 数据底座、持久化因子管理与策略信号进入 Rust 事件内核，最终生成带完整血缘的 bundle v3 和报告。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+    </marker>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#2563eb"/>
+    </marker>
+    <style>
+      text { font-family: "Noto Sans CJK SC", "Microsoft YaHei", "DejaVu Sans", sans-serif; }
+      .title { font-size: 32px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-size: 16px; fill: #475569; }
+      .group-title { font-size: 18px; font-weight: 700; fill: #1e293b; }
+      .node-title { font-size: 16px; font-weight: 700; fill: #0f172a; }
+      .node-sub { font-size: 13px; fill: #475569; }
+      .edge-label { font-size: 12px; font-weight: 600; fill: #334155; }
+      .legend { font-size: 12px; fill: #475569; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" fill="#f8fafc"/>
+  <text x="60" y="62" class="title">TradeMaster v1 运行时架构</text>
+  <text x="60" y="94" class="subtitle">日频 A 股：Python 批量研究，Rust 唯一事件执行内核，Parquet 权威数据与可重放运行记录</text>
+
+  <rect x="50" y="145" width="220" height="700" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="72" y="178" class="group-title">外部系统</text>
+
+  <rect x="310" y="145" width="350" height="700" rx="18" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text x="332" y="178" class="group-title">Python 数据底座</text>
+
+  <rect x="700" y="145" width="300" height="700" rx="18" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+  <text x="722" y="178" class="group-title">Python 研究层</text>
+
+  <rect x="1040" y="145" width="320" height="700" rx="18" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text x="1062" y="178" class="group-title">Rust 事件内核</text>
+
+  <rect x="1400" y="145" width="150" height="700" rx="18" fill="#f1f5f9" stroke="#94a3b8" stroke-width="2"/>
+  <text x="1422" y="178" class="group-title">输出</text>
+
+  <!-- connections -->
+  <path d="M240 292 H350" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <path d="M485 335 V405" fill="none" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M485 515 V585" fill="none" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M620 640 H680 V460 H740" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <path d="M850 405 V335" fill="none" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M850 515 V585" fill="none" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M960 640 H1010 V280 H1080" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <path d="M1200 335 V405" fill="none" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1200 515 V585" fill="none" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <path d="M1320 640 H1375 V460 H1418" fill="none" stroke="#2563eb" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <path d="M1475 515 V585" fill="none" stroke="#475569" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- edge label backgrounds -->
+  <rect x="260" y="266" width="92" height="24" rx="8" fill="#ffffff"/>
+  <text x="270" y="283" class="edge-label">API 批次</text>
+  <rect x="632" y="522" width="108" height="24" rx="8" fill="#ffffff"/>
+  <text x="642" y="539" class="edge-label">PIT Arrow</text>
+  <rect x="962" y="342" width="108" height="24" rx="8" fill="#ffffff"/>
+  <text x="972" y="359" class="edge-label">SignalRecord</text>
+  <rect x="1288" y="536" width="104" height="24" rx="8" fill="#ffffff"/>
+  <text x="1298" y="553" class="edge-label">Run records</text>
+
+  <!-- external -->
+  <rect x="80" y="225" width="160" height="110" rx="14" fill="#ffffff" stroke="#60a5fa" stroke-width="2"/>
+  <circle cx="112" cy="259" r="17" fill="#dbeafe"/>
+  <path d="M104 259 h16 M112 251 v16" stroke="#2563eb" stroke-width="2"/>
+  <text x="140" y="258" class="node-title">Tushare</text>
+  <text x="100" y="292" class="node-sub">行情、交易状态、财务</text>
+  <text x="100" y="314" class="node-sub">token 仅来自环境变量</text>
+
+  <rect x="80" y="585" width="160" height="110" rx="14" fill="#ffffff" stroke="#60a5fa" stroke-width="2"/>
+  <text x="100" y="620" class="node-title">用户 / CLI</text>
+  <text x="100" y="650" class="node-sub">配置、因子、策略</text>
+  <text x="100" y="672" class="node-sub">正式运行与报告请求</text>
+
+  <!-- data -->
+  <rect x="350" y="225" width="270" height="110" rx="14" fill="#ffffff" stroke="#4ade80" stroke-width="2"/>
+  <text x="374" y="258" class="node-title">SourceAdapter / Ingestor</text>
+  <text x="374" y="288" class="node-sub">coverage-first、gap fill、分页校验</text>
+  <text x="374" y="310" class="node-sub">权限或 schema 异常严格失败</text>
+
+  <rect x="350" y="405" width="270" height="110" rx="14" fill="#ffffff" stroke="#4ade80" stroke-width="2"/>
+  <text x="374" y="438" class="node-title">Parquet Data Lake</text>
+  <text x="374" y="468" class="node-sub">raw → staging → canonical</text>
+  <text x="374" y="490" class="node-sub">权威分区、checksum、batch metadata</text>
+
+  <rect x="350" y="585" width="270" height="110" rx="14" fill="#ffffff" stroke="#4ade80" stroke-width="2"/>
+  <text x="374" y="618" class="node-title">DuckDB / DataPortal</text>
+  <text x="374" y="648" class="node-sub">coverage catalog、read_parquet()、PIT</text>
+  <text x="374" y="670" class="node-sub">snapshot/request/object-set 摘要</text>
+
+  <!-- research -->
+  <rect x="740" y="225" width="220" height="110" rx="14" fill="#ffffff" stroke="#fb923c" stroke-width="2"/>
+  <text x="764" y="258" class="node-title">Factor Evaluation</text>
+  <text x="764" y="288" class="node-sub">IC / RankIC / 分层收益</text>
+  <text x="764" y="310" class="node-sub">forward return 与信号隔离</text>
+
+  <rect x="740" y="405" width="220" height="110" rx="14" fill="#ffffff" stroke="#fb923c" stroke-width="2"/>
+  <text x="764" y="438" class="node-title">Factor Manager / DAG</text>
+  <text x="764" y="468" class="node-sub">definition / code / 参数 hash</text>
+  <text x="764" y="490" class="node-sub">Parquet 物化、DuckDB 发现</text>
+
+  <rect x="740" y="585" width="220" height="110" rx="14" fill="#ffffff" stroke="#fb923c" stroke-width="2"/>
+  <text x="764" y="618" class="node-title">Signal / Strategy</text>
+  <text x="764" y="648" class="node-sub">目标权重表或 on_bar</text>
+  <text x="764" y="670" class="node-sub">只产生意图，不直接改账户</text>
+
+  <!-- rust -->
+  <rect x="1080" y="225" width="240" height="110" rx="14" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+  <text x="1104" y="258" class="node-title">EventRuntime / Clock</text>
+  <text x="1104" y="288" class="node-sub">开盘、收盘、日结阶段</text>
+  <text x="1104" y="310" class="node-sub">确定性时间与订单顺序</text>
+
+  <rect x="1080" y="405" width="240" height="110" rx="14" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+  <text x="1104" y="438" class="node-title">Validator / Execution</text>
+  <text x="1104" y="468" class="node-sub">T+1、停牌、涨跌停、整手</text>
+  <text x="1104" y="490" class="node-sub">费用、滑点、Fill/Reject/Expire</text>
+
+  <rect x="1080" y="585" width="240" height="110" rx="14" fill="#ffffff" stroke="#a78bfa" stroke-width="2"/>
+  <text x="1104" y="618" class="node-title">Atomic Ledger</text>
+  <text x="1104" y="648" class="node-sub">现金、持仓 lot、可售批次</text>
+  <text x="1104" y="670" class="node-sub">posting、settlement、NAV snapshot</text>
+
+  <!-- output -->
+  <rect x="1418" y="405" width="114" height="110" rx="14" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+  <text x="1430" y="439" class="node-title">Bundle v3</text>
+  <text x="1430" y="463" class="node-sub">source/factor</text>
+  <text x="1430" y="485" class="node-sub">Rust records</text>
+  <text x="1430" y="507" class="node-sub">SHA/lineage</text>
+
+  <rect x="1418" y="585" width="114" height="110" rx="14" fill="#ffffff" stroke="#64748b" stroke-width="2"/>
+  <text x="1430" y="619" class="node-title">报告</text>
+  <text x="1430" y="649" class="node-sub">HTML / metrics</text>
+  <text x="1430" y="671" class="node-sub">summary / MD</text>
+
+  <!-- user config arrows -->
+  <path d="M240 640 H290 V780 H680 V680 H740" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+  <rect x="405" y="752" width="198" height="24" rx="8" fill="#ffffff"/>
+  <text x="417" y="769" class="edge-label">配置、FactorDefinition、策略代码</text>
+
+  <rect x="60" y="885" width="1480" height="58" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <line x1="90" y1="914" x2="140" y2="914" stroke="#2563eb" stroke-width="3" marker-end="url(#arrow-blue)"/>
+  <text x="155" y="919" class="legend">黄金数据/执行链</text>
+  <line x1="330" y1="914" x2="380" y2="914" stroke="#64748b" stroke-width="2" stroke-dasharray="8 7" marker-end="url(#arrow)"/>
+  <text x="395" y="919" class="legend">配置或用户扩展</text>
+  <text x="625" y="919" class="legend">边界：Python 不拥有权威账户；Rust 不读取 Tushare/DuckDB；正式运行绑定 source/factor/selection/records</text>
+  <text x="625" y="939" class="legend">扩展缝：Calendar / MarketRules / Settlement / Fee / Currency-FX 均可按市场注入</text>
+</svg>

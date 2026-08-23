@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1680" viewBox="0 0 1500 1680" role="img" aria-labelledby="title desc">
+  <title id="title">TradeMaster 端到端数据流</title>
+  <desc id="desc">Tushare响应被内容寻址写入Parquet并由DuckDB建立覆盖目录，经PIT面板分为因子研究流和Rust事件回测流，最终生成不可变报告。</desc>
+  <defs>
+    <marker id="arrow-blue" markerWidth="11" markerHeight="9" refX="10" refY="4.5" orient="auto">
+      <path d="M0,0 L11,4.5 L0,9 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="11" markerHeight="9" refX="10" refY="4.5" orient="auto">
+      <path d="M0,0 L11,4.5 L0,9 Z" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="11" markerHeight="9" refX="10" refY="4.5" orient="auto">
+      <path d="M0,0 L11,4.5 L0,9 Z" fill="#7c3aed"/>
+    </marker>
+    <marker id="arrow-slate" markerWidth="11" markerHeight="9" refX="10" refY="4.5" orient="auto">
+      <path d="M0,0 L11,4.5 L0,9 Z" fill="#64748b"/>
+    </marker>
+    <style>
+      text { font-family: "Noto Sans CJK SC", "PingFang SC", "Microsoft YaHei", "DejaVu Sans", sans-serif; }
+      .title { font-size: 32px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-size: 18px; fill: #475569; }
+      .stage { font-size: 20px; font-weight: 700; fill: #1e293b; }
+      .node-title { font-size: 20px; font-weight: 700; fill: #0f172a; }
+      .node-sub { font-size: 16px; fill: #475569; }
+      .edge { font-size: 15px; font-weight: 600; fill: #334155; }
+      .legend { font-size: 15px; fill: #475569; }
+    </style>
+  </defs>
+
+  <rect width="1500" height="1680" fill="#f8fafc"/>
+  <text x="60" y="58" class="title">TradeMaster 端到端数据流</text>
+  <text x="60" y="94" class="subtitle">唯一外部数据源：Tushare；Parquet保存事实，DuckDB负责覆盖、任务状态与查询，Rust负责权威交易结果</text>
+
+  <rect x="90" y="470" width="1320" height="245" rx="20" fill="#ecfdf5" stroke="#86efac" stroke-width="2"/>
+  <text x="120" y="508" class="stage">持久化与覆盖证明</text>
+  <rect x="90" y="1010" width="620" height="570" rx="20" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+  <text x="120" y="1048" class="stage">研究流：因子质量与可视化</text>
+  <rect x="790" y="1010" width="620" height="570" rx="20" fill="#f5f3ff" stroke="#c4b5fd" stroke-width="2"/>
+  <text x="820" y="1048" class="stage">执行流：策略、交易与账本</text>
+
+  <!-- Main and branch connections. -->
+  <path d="M750 230 V315" fill="none" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow-blue)"/>
+  <path d="M650 425 V470 H430 V545" fill="none" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow-blue)"/>
+  <path d="M850 425 V470 H1070 V545" fill="none" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow-blue)"/>
+  <path d="M430 655 V735 H700 V805" fill="none" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow-blue)"/>
+  <path d="M1070 655 V750 H800 V805" fill="none" stroke="#64748b" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrow-slate)"/>
+  <path d="M1070 545 V455 H1040 V370 H1000" fill="none" stroke="#64748b" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrow-slate)"/>
+  <path d="M650 925 V970 H400 V1080" fill="none" stroke="#ea580c" stroke-width="4" marker-end="url(#arrow-orange)"/>
+  <path d="M850 925 V970 H1100 V1080" fill="none" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-purple)"/>
+  <path d="M400 1180 V1260" fill="none" stroke="#ea580c" stroke-width="4" marker-end="url(#arrow-orange)"/>
+  <path d="M400 1360 V1440" fill="none" stroke="#ea580c" stroke-width="4" marker-end="url(#arrow-orange)"/>
+  <path d="M1100 1180 V1260" fill="none" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-purple)"/>
+  <path d="M1100 1360 V1440" fill="none" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-purple)"/>
+
+  <rect x="650" y="262" width="200" height="30" rx="9" fill="#ffffff"/>
+  <text x="670" y="283" class="edge">分页响应 + request metadata</text>
+  <rect x="350" y="727" width="180" height="30" rx="9" fill="#ffffff"/>
+  <text x="370" y="748" class="edge">权威Parquet对象</text>
+  <rect x="970" y="727" width="205" height="30" rx="9" fill="#ffffff"/>
+  <text x="990" y="748" class="edge">coverage / task catalog</text>
+  <rect x="1010" y="438" width="320" height="30" rx="9" fill="#ffffff"/>
+  <text x="1030" y="459" class="edge">完整命中：不调用provider</text>
+  <rect x="435" y="955" width="185" height="30" rx="9" fill="#ffffff"/>
+  <text x="455" y="976" class="edge">PIT Arrow / labels</text>
+  <rect x="880" y="955" width="220" height="30" rx="9" fill="#ffffff"/>
+  <text x="900" y="976" class="edge">snapshot-bound inputs</text>
+
+  <rect x="500" y="130" width="500" height="100" rx="16" fill="#ffffff" stroke="#60a5fa" stroke-width="3"/>
+  <circle cx="548" cy="180" r="23" fill="#dbeafe"/>
+  <path d="M536 180 H560 M548 168 V192" stroke="#2563eb" stroke-width="3"/>
+  <text x="590" y="172" class="node-title">Tushare API</text>
+  <text x="590" y="204" class="node-sub">当前唯一外部行情、状态、财务与指数数据源</text>
+
+  <rect x="500" y="315" width="500" height="110" rx="16" fill="#ffffff" stroke="#60a5fa" stroke-width="3"/>
+  <text x="535" y="354" class="node-title">DownloadPlan / Cache-first Downloader</text>
+  <text x="535" y="386" class="node-sub">先查DuckDB覆盖，再按稳定request SHA补缺口</text>
+  <text x="535" y="410" class="node-sub">权限、分页、schema或hash异常严格失败</text>
+
+  <rect x="220" y="545" width="420" height="110" rx="16" fill="#ffffff" stroke="#4ade80" stroke-width="3"/>
+  <text x="255" y="584" class="node-title">Immutable Parquet Objects</text>
+  <text x="255" y="616" class="node-sub">raw / canonical / factor values / labels</text>
+  <text x="255" y="640" class="node-sub">内容寻址、schema、row count与request metadata</text>
+
+  <rect x="860" y="545" width="420" height="110" rx="16" fill="#ffffff" stroke="#4ade80" stroke-width="3"/>
+  <text x="895" y="584" class="node-title">DuckDB Catalog / Query Layer</text>
+  <text x="895" y="616" class="node-sub">coverage、任务lease、PIT查询与artifact发现</text>
+  <text x="895" y="640" class="node-sub">目录不是事实权威，不保存账户状态</text>
+
+  <rect x="550" y="805" width="400" height="120" rx="16" fill="#ffffff" stroke="#14b8a6" stroke-width="3"/>
+  <text x="585" y="846" class="node-title">PIT Snapshot / Dense Session Panel</text>
+  <text x="585" y="880" class="node-sub">历史股票池、market/status/fundamental join</text>
+  <text x="585" y="906" class="node-sub">冻结source manifest、可用性与forward labels</text>
+
+  <rect x="160" y="1080" width="480" height="100" rx="16" fill="#ffffff" stroke="#fb923c" stroke-width="3"/>
+  <text x="195" y="1119" class="node-title">Managed Factor Materialization</text>
+  <text x="195" y="1151" class="node-sub">PIT inputs → definition-bound factor Parquet</text>
+
+  <rect x="160" y="1260" width="480" height="100" rx="16" fill="#ffffff" stroke="#fb923c" stroke-width="3"/>
+  <text x="195" y="1299" class="node-title">DuckDB Out-of-core Evaluator</text>
+  <text x="195" y="1331" class="node-sub">factor + universe + labels → IC / 暴露 / 换手 / 容量</text>
+
+  <rect x="160" y="1440" width="480" height="100" rx="16" fill="#ffffff" stroke="#fb923c" stroke-width="3"/>
+  <text x="195" y="1479" class="node-title">Factor Research Report</text>
+  <text x="195" y="1511" class="node-sub">Parquet / JSON + 自包含HTML / Markdown</text>
+
+  <rect x="860" y="1080" width="480" height="100" rx="16" fill="#ffffff" stroke="#a78bfa" stroke-width="3"/>
+  <text x="895" y="1119" class="node-title">Strategy / SignalRecord</text>
+  <text x="895" y="1151" class="node-sub">factor values → target weight或quantity intent</text>
+
+  <rect x="860" y="1260" width="480" height="100" rx="16" fill="#ffffff" stroke="#a78bfa" stroke-width="3"/>
+  <text x="895" y="1299" class="node-title">RunnerRequest → Rust tm-runner</text>
+  <text x="895" y="1331" class="node-sub">事件循环 → validate → fill/reject/expire → atomic ledger</text>
+
+  <rect x="860" y="1440" width="480" height="100" rx="16" fill="#ffffff" stroke="#a78bfa" stroke-width="3"/>
+  <text x="895" y="1479" class="node-title">Run Bundle / Strategy Report</text>
+  <text x="895" y="1511" class="node-sub">orders、fills、ledger、NAV、metrics、HTML与hash链</text>
+
+  <rect x="90" y="1605" width="1320" height="45" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+  <line x1="125" y1="1628" x2="185" y2="1628" stroke="#2563eb" stroke-width="4" marker-end="url(#arrow-blue)"/>
+  <text x="205" y="1633" class="legend">权威数据链</text>
+  <line x1="365" y1="1628" x2="425" y2="1628" stroke="#ea580c" stroke-width="4" marker-end="url(#arrow-orange)"/>
+  <text x="445" y="1633" class="legend">研究派生链</text>
+  <line x1="630" y1="1628" x2="690" y2="1628" stroke="#7c3aed" stroke-width="4" marker-end="url(#arrow-purple)"/>
+  <text x="710" y="1633" class="legend">事件执行链</text>
+  <line x1="890" y1="1628" x2="950" y2="1628" stroke="#64748b" stroke-width="3" stroke-dasharray="10 8" marker-end="url(#arrow-slate)"/>
+  <text x="970" y="1633" class="legend">目录、覆盖或缓存控制</text>
+</svg>

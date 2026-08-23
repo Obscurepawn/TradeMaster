@@ -1,0 +1,174 @@
+{
+  "schema_id": "trademaster.run-artifacts/v1",
+  "enums": {
+    "intent_type": ["target_weight", "quantity"],
+    "side": ["buy", "sell"],
+    "rejection_code": ["invalid_time", "invalid_quantity", "suspended", "limit_up", "limit_down", "insufficient_cash", "insufficient_sellable", "missing_market_data"],
+    "posting_account": ["cash", "position", "commission_expense", "tax_expense", "transfer_fee_expense", "slippage_expense"],
+    "debit_credit": ["debit", "credit"],
+    "unit_type": ["currency"]
+  },
+  "sort_keys": {
+    "signals": ["run_id", "event_seq", "signal_seq"],
+    "orders": ["run_id", "event_seq", "order_seq"],
+    "accepted_orders": ["run_id", "event_seq", "order_seq"],
+    "fills": ["run_id", "event_seq", "order_seq", "fill_seq"],
+    "rejections": ["run_id", "event_seq", "order_seq"],
+    "expiries": ["run_id", "event_seq", "order_seq"],
+    "ledger_postings": ["run_id", "event_seq", "posting_seq"],
+    "account_states": ["run_id", "event_seq", "transition_seq"],
+    "position_lots": ["run_id", "event_seq", "lot_id"],
+    "positions": ["run_id", "event_seq", "instrument_id"],
+    "nav": ["run_id", "event_seq"]
+  },
+  "constraints": {
+    "signals": {"unique": ["signal_id"], "strict_time_order": [["signal_time", "eligible_execution_time"]], "sha256": ["snapshot_id"]},
+    "orders": {"unique": ["order_id"], "time_order": [["eligible_at", "submitted_at"]], "positive": ["requested_quantity"]},
+    "accepted_orders": {"unique": ["order_id"]},
+    "fills": {"unique": ["fill_id"], "positive": ["quantity", "price"], "non_negative": ["commission", "tax", "transfer_fee", "slippage"]},
+    "rejections": {"unique": ["order_id"]},
+    "expiries": {"unique": ["order_id"], "positive": ["remaining_quantity"]},
+    "ledger_postings": {"unique": ["posting_id"], "positive": ["raw_units"], "fixed": {"unit_type": "currency", "scale": 8}, "balance_by": ["run_id", "event_seq", "source_id", "unit_id"]},
+    "account_states": {"unique": ["transition_id"], "sha256": ["before_state_hash", "after_state_hash"]},
+    "position_lots": {"positive": ["quantity"], "time_order": [["acquired_at", "sellable_at"]], "non_negative": ["unit_cost"]},
+    "positions": {"non_negative": ["quantity", "sellable_quantity", "market_value"]},
+    "nav": {"non_negative": ["cash", "market_value", "net_asset_value"]}
+  },
+  "run_constraints": {
+    "scope": "one completed run across all eleven artifact tables",
+    "same_run_id": true,
+    "foreign_keys": [
+      ["orders.signal_id", "signals.signal_id"],
+      ["accepted_orders.order_id", "orders.order_id"],
+      ["rejections.order_id", "orders.order_id"],
+      ["fills.order_id", "accepted_orders.order_id"],
+      ["expiries.order_id", "accepted_orders.order_id"]
+    ],
+    "order_admission": "each order appears in exactly one of accepted_orders or rejections",
+    "accepted_terminal": "each accepted order is fully filled, or partially/unfilled then expired for the exact remainder",
+    "signal_order_identity": "order instrument and eligible_at equal its signal; submitted_at >= signal eligible_execution_time",
+    "sequence_identity": "accepted, rejection, fill and expiry event_seq/order_seq equal the referenced order",
+    "ledger_source": "each fill has postings and one account transition; settlement transitions are explicit; transition hashes form a chain",
+    "position_lot_identity": "at each event/instrument, position quantity and sellable quantity equal total and unlocked non-future lots",
+    "chronology": "accepted_at >= submitted_at; rejection.event_time >= submitted_at; fills and expiry >= accepted_at; expiry >= last fill"
+  },
+  "records": {
+    "signals": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "signal_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "signal_id", "type": "utf8", "nullable": false},
+      {"name": "strategy_id", "type": "utf8", "nullable": false},
+      {"name": "instrument_id", "type": "utf8", "nullable": false},
+      {"name": "signal_time", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "eligible_execution_time", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "intent_type", "type": "utf8", "nullable": false, "enum": "intent_type"},
+      {"name": "value", "type": "decimal128_38_8", "nullable": false},
+      {"name": "reason", "type": "utf8", "nullable": false},
+      {"name": "snapshot_id", "type": "utf8", "nullable": false}
+    ],
+    "orders": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "order_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "order_id", "type": "utf8", "nullable": false},
+      {"name": "signal_id", "type": "utf8", "nullable": false},
+      {"name": "instrument_id", "type": "utf8", "nullable": false},
+      {"name": "side", "type": "utf8", "nullable": false, "enum": "side"},
+      {"name": "requested_quantity", "type": "decimal128_38_0", "nullable": false},
+      {"name": "submitted_at", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "eligible_at", "type": "timestamp_us_utc", "nullable": false}
+    ],
+    "accepted_orders": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "order_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "order_id", "type": "utf8", "nullable": false},
+      {"name": "accepted_at", "type": "timestamp_us_utc", "nullable": false}
+    ],
+    "fills": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "order_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "fill_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "fill_id", "type": "utf8", "nullable": false},
+      {"name": "order_id", "type": "utf8", "nullable": false},
+      {"name": "event_time", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "quantity", "type": "decimal128_38_0", "nullable": false},
+      {"name": "price", "type": "decimal128_38_8", "nullable": false},
+      {"name": "commission", "type": "decimal128_38_8", "nullable": false},
+      {"name": "tax", "type": "decimal128_38_8", "nullable": false},
+      {"name": "transfer_fee", "type": "decimal128_38_8", "nullable": false},
+      {"name": "slippage", "type": "decimal128_38_8", "nullable": false}
+    ],
+    "rejections": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "order_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "order_id", "type": "utf8", "nullable": false},
+      {"name": "event_time", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "code", "type": "utf8", "nullable": false, "enum": "rejection_code"},
+      {"name": "message", "type": "utf8", "nullable": false}
+    ],
+    "expiries": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "order_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "order_id", "type": "utf8", "nullable": false},
+      {"name": "event_time", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "remaining_quantity", "type": "decimal128_38_0", "nullable": false},
+      {"name": "reason", "type": "utf8", "nullable": false}
+    ],
+    "ledger_postings": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "posting_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "posting_id", "type": "utf8", "nullable": false},
+      {"name": "event_time", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "account", "type": "utf8", "nullable": false, "enum": "posting_account"},
+      {"name": "debit_credit", "type": "utf8", "nullable": false, "enum": "debit_credit"},
+      {"name": "unit_type", "type": "utf8", "nullable": false, "enum": "unit_type"},
+      {"name": "unit_id", "type": "utf8", "nullable": false},
+      {"name": "raw_units", "type": "decimal128_38_0", "nullable": false},
+      {"name": "scale", "type": "uint8", "nullable": false},
+      {"name": "source_id", "type": "utf8", "nullable": false}
+    ],
+    "account_states": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "transition_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "transition_id", "type": "utf8", "nullable": false},
+      {"name": "source_id", "type": "utf8", "nullable": false},
+      {"name": "event_time", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "before_state_hash", "type": "utf8", "nullable": false},
+      {"name": "after_state_hash", "type": "utf8", "nullable": false}
+    ],
+    "position_lots": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "lot_id", "type": "utf8", "nullable": false},
+      {"name": "instrument_id", "type": "utf8", "nullable": false},
+      {"name": "quantity", "type": "decimal128_38_0", "nullable": false},
+      {"name": "acquired_at", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "sellable_at", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "unit_cost", "type": "decimal128_38_8", "nullable": false}
+    ],
+    "positions": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "event_time", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "instrument_id", "type": "utf8", "nullable": false},
+      {"name": "quantity", "type": "decimal128_38_0", "nullable": false},
+      {"name": "sellable_quantity", "type": "decimal128_38_0", "nullable": false},
+      {"name": "market_value", "type": "decimal128_38_8", "nullable": false}
+    ],
+    "nav": [
+      {"name": "run_id", "type": "utf8", "nullable": false},
+      {"name": "event_seq", "type": "decimal128_38_0", "nullable": false},
+      {"name": "event_time", "type": "timestamp_us_utc", "nullable": false},
+      {"name": "cash", "type": "decimal128_38_8", "nullable": false},
+      {"name": "market_value", "type": "decimal128_38_8", "nullable": false},
+      {"name": "net_asset_value", "type": "decimal128_38_8", "nullable": false}
+    ]
+  }
+}

@@ -1,15 +1,80 @@
-/research/
+# -----------------------------------------------------------------------------
+# Local data, generated research output, and third-party study repositories
+# -----------------------------------------------------------------------------
 /data/
 /artifacts/
 /logs/
-/target/
+/research/
+/docs/research/
+/scratch/
+/tmp/
+
+# Runtime databases and columnar data must be regenerated locally.
+*.duckdb
+*.duckdb.wal
+*.parquet
+*.arrow
+*.feather
+*.ipc
+
+# -----------------------------------------------------------------------------
+# Secrets and machine-local configuration
+# -----------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+/.secrets/
+/secrets/
+/credentials/
+tushare_token
+.tushare_token
+*.pem
+*.p12
+*.key
+
+# -----------------------------------------------------------------------------
+# Python environments, caches, coverage, and package output
+# -----------------------------------------------------------------------------
 /.venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+/venv/
+/env/
 __pycache__/
 *.py[cod]
 *.so
 *.pyd
-.env
-.env.*
+*.egg-info/
+/.pytest_cache/
+/.mypy_cache/
+/.ruff_cache/
+/.hypothesis/
+/.coverage
+/.coverage.*
+/coverage.xml
+/htmlcov/
+/build/
+/dist/
+
+# -----------------------------------------------------------------------------
+# Rust build and profiling output
+# -----------------------------------------------------------------------------
+/target/
+*.profraw
+*.profdata
+**/*.rs.bk
+
+# -----------------------------------------------------------------------------
+# Editors, operating systems, and temporary files
+# -----------------------------------------------------------------------------
+/.idea/
+/.vscode/
+/.codex/
+/.agents/
+*.swp
+*.swo
+*~
+*.tmp
+*.temp
+*.bak
+*.orig
+.DS_Store
+Thumbs.db

@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trademaster.run-manifest/v1",
+  "title": "TradeMaster completed run manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "canonical_encoding": "UTF-8 compact JSON, property order as required, UTC RFC3339 timestamps using Z",
+  "required": ["manifest_version", "status", "run_id", "created_at", "snapshot_id", "strategy_id", "engine_version", "config_hash", "artifact_schema_id", "artifact_schema_sha256", "artifacts"],
+  "properties": {
+    "manifest_version": {"const": "run/v1"},
+    "status": {"const": "complete"},
+    "run_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$"},
+    "snapshot_id": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "strategy_id": {"type": "string", "minLength": 1},
+    "engine_version": {"type": "string", "minLength": 1},
+    "config_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact_schema_id": {"const": "trademaster.run-artifacts/v1"},
+    "artifact_schema_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifacts": {
+      "type": "array",
+      "minItems": 11,
+      "maxItems": 11,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact_name", "uri", "sha256", "row_count"],
+        "properties": {
+          "artifact_name": {"enum": ["accepted_orders", "account_states", "expiries", "fills", "ledger_postings", "nav", "orders", "position_lots", "positions", "rejections", "signals"]},
+          "uri": {"type": "string", "minLength": 1},
+          "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "row_count": {"type": "integer", "minimum": 0, "maximum": 18446744073709551615}
+        }
+      }
+    }
+  }
+}
