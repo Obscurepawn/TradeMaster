@@ -74,6 +74,43 @@ def test_benchmark_metrics_require_exact_sessions_and_match_regression() -> None
     assert undefined.correlation is None
 
 
+def test_monthly_heatmap_includes_the_first_session_move_and_leaves_gaps_blank(
+    tmp_path: Path,
+) -> None:
+    dates = (
+        "2024-12-16", "2024-12-31", "2025-01-03", "2025-01-31",
+        "2025-02-28", "2025-04-30", "2025-05-30",
+    )
+    times = tuple(datetime.fromisoformat(day).replace(tzinfo=UTC) for day in dates)
+    nav = tuple(map(Decimal, ("100", "110", "121", "133.1", "106.48", "100", "120")))
+    cash_weight = (("cash", Decimal(1)),)
+    output = tmp_path / "monthly.html"
+    build_html_report(
+        output,
+        identity=ReportIdentity("run-1", "test", "a" * 64, ()),
+        strategy=PerformanceSeries(times, nav, nav, (Decimal(0),) * len(times)),
+        benchmarks=(),
+        trade_summary=TradeSummary.from_scaled_values(
+            gross_traded_notional_scaled=0,
+            commission_scaled=0,
+            tax_scaled=0,
+            transfer_fee_scaled=0,
+            slippage_scaled=0,
+            average_nav_scaled=100 * 10**8,
+        ),
+        exposures=(ExposureObservation(times[0], cash_weight, cash_weight),),
+    )
+
+    plot = re.search(r'Plotly\.newPlot\(\s*"trademaster-monthly",\s*', output.read_text())
+    assert plot is not None
+    traces, _ = json.JSONDecoder().raw_decode(plot.string[plot.end():])
+    assert traces[0]["y"] == [2024, 2025]
+    assert traces[0]["z"] == [
+        [None] * 11 + [0.10],
+        [0.21, -0.20, None, None, 0.20] + [None] * 7,
+    ]
+
+
 def test_exposure_diagnostics_and_standalone_html_include_required_sections(
     tmp_path: Path,
 ) -> None:

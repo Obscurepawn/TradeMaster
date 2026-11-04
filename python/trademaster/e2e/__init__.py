@@ -23,6 +23,7 @@ from trademaster.factors.storage import FactorArtifact, FactorMaterialization
 from trademaster.reporting import (
     BenchmarkSeries,
     ExposureObservation,
+    MonthlyReturnBasis,
     PerformanceSeries,
     ReportIdentity,
     TradeSummary,
@@ -605,8 +606,10 @@ class E2ERunnerClient:
                 "path": factor_path.relative_to(output_dir).as_posix(),
                 "row_count": artifact.manifest.output_row_count,
             }
+        monthly_return_basis = MonthlyReturnBasis.PREVIOUS_MONTH_CLOSE
         report_input = {
             "annual_sessions": annual_sessions,
+            "monthly_return_basis": monthly_return_basis.value,
             "benchmarks": [
                 {
                     "benchmark_id": item.benchmark_id,
@@ -633,6 +636,7 @@ class E2ERunnerClient:
             trade_summary=trade_summary,
             exposures=exposures,
             annual_sessions=annual_sessions,
+            monthly_return_basis=monthly_return_basis,
         )
         result_sha256 = hashlib.sha256(result_bytes).hexdigest()
         report_input_sha256 = hashlib.sha256(report_input_bytes).hexdigest()
@@ -1047,8 +1051,15 @@ def verify_e2e_bundle(manifest_path: Path) -> E2ERunBundle:
     if not isinstance(report_input, dict) or frozenset(report_input) not in {
         frozenset(legacy_report_keys),
         frozenset(timeline_report_keys),
+        frozenset(timeline_report_keys | {"monthly_return_basis"}),
     }:
         raise E2ERunnerError("report input schema is invalid")
+    try:
+        monthly_return_basis = MonthlyReturnBasis(
+            report_input.get("monthly_return_basis", MonthlyReturnBasis.FIRST_OBSERVATION)
+        )
+    except ValueError as error:
+        raise E2ERunnerError("report monthly return basis is invalid") from error
     annual_sessions = report_input["annual_sessions"]
     if (
         not isinstance(annual_sessions, int)
@@ -1135,6 +1146,7 @@ def verify_e2e_bundle(manifest_path: Path) -> E2ERunBundle:
             trade_summary=trade_summary,
             exposures=exposures,
             annual_sessions=annual_sessions,
+            monthly_return_basis=monthly_return_basis,
         )
         report_path, report_sha256, report_bytes = verified_file("report")
         if rebuilt.read_bytes() != report_bytes:

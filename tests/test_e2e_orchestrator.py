@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
+from unittest.mock import patch
 
 import pyarrow as pa
 import pytest
@@ -25,7 +26,7 @@ from trademaster.e2e import (
     attach_e2e_bundle_artifacts,
     verify_e2e_bundle,
 )
-from trademaster.reporting import BenchmarkSeries
+from trademaster.reporting import BenchmarkSeries, MonthlyReturnBasis, build_html_report
 from trademaster.signals import signal_output_schema
 
 UNIT = 100_000_000
@@ -208,6 +209,8 @@ def test_real_rust_runner_round_trip_builds_reproducible_report_bundle(
 
     result = json.loads(bundle.result_path.read_text(encoding="utf-8"))
     manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+    report_input = json.loads(bundle.report_input_path.read_text(encoding="utf-8"))
+    assert report_input["monthly_return_basis"] == "previous_month_close"
     assert result["execution_count"] == 2
     assert result["final_positions"] == []
     assert manifest["request_sha256"] == result["request_sha256"]
@@ -269,6 +272,39 @@ def test_bundle_replays_the_bytes_checked_against_its_manifest(
     verified = verify_e2e_bundle(bundle.manifest_path)
     assert verified.request_sha256 == bundle.request_sha256
     assert verified.result_sha256 == bundle.result_sha256
+
+
+def test_unversioned_report_input_reproduces_the_archived_monthly_heatmap(
+    tmp_path: Path,
+) -> None:
+    request = _request()
+    feb_close = _event(datetime(2025, 2, 3, 7, tzinfo=UTC), "bar_close", 11)
+    request = request.model_copy(update={"events": (*request.events[:-1], feb_close)})
+    with patch("trademaster.e2e.build_html_report", wraps=build_html_report) as render:
+        bundle = E2ERunnerClient().execute(
+            request,
+            output_dir=tmp_path,
+            benchmarks=(),
+            classifications={"600000.SH": ("bank", "large")},
+            snapshot_manifests=(BUY_SNAPSHOT, SELL_SNAPSHOT, MARKET_SNAPSHOT),
+        )
+    legacy_options = dict(render.call_args.kwargs)
+    legacy_options["monthly_return_basis"] = MonthlyReturnBasis.FIRST_OBSERVATION
+    build_html_report(bundle.report_path, **legacy_options)
+    report_input = json.loads(bundle.report_input_path.read_bytes())
+    del report_input["monthly_return_basis"]
+    input_bytes = json.dumps(report_input, sort_keys=True, separators=(",", ":")).encode()
+    bundle.report_input_path.write_bytes(input_bytes)
+
+    # SHA-256 from this fixture rendered by the original reporter with uv.lock.
+    archived_sha256 = "1f73a33ef7375c07f56698b1d5ad4572c64383e3180e6e50b0be5fd0173ade3c"
+    manifest = json.loads(bundle.manifest_path.read_bytes())
+    manifest["report_sha256"] = manifest["report"]["sha256"] = archived_sha256
+    manifest["report_input"]["sha256"] = hashlib.sha256(input_bytes).hexdigest()
+    bundle.manifest_path.write_text(json.dumps(manifest))
+
+    verified = verify_e2e_bundle(bundle.manifest_path)
+    assert hashlib.sha256(verified.report_path.read_bytes()).hexdigest() == archived_sha256
 
 
 def test_report_exposure_uses_latest_classification_available_at_each_event(

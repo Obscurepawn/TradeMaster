@@ -36,9 +36,27 @@ result.save("artifacts/five-session-momentum")
 
 Replay this strategy with `uv run tm-replay artifacts/five-session-momentum/request.json`. Use `detail=True` to inspect its orders and fills. For repeated trials, reuse the open snapshot and use the default summary mode when you only need daily equity and totals.
 
-- Supply the **whole target portfolio**. Weights are nonnegative, total at most one, and leave the remainder in cash. Omitted holdings have target weight zero. `{}` targets cash. `None` keeps the current instruction, including any remaining attempts to fill it.
+- Supply the **whole target portfolio**. Give each weight as a nonnegative value with at most eight decimal places. The weights sum to at most one and leave the remainder in cash. Omitted holdings have target weight zero. `{}` targets cash. `None` keeps the current instruction, including any remaining attempts to fill it.
 - For cross-sectional selection use `schedule="week_end"`, rank `day.instruments` as listed on that date, and break ties by instrument ID. `day.scores(name)` reads features published by the decision cutoff. Bound price history with `limit` and handle missing observations and indicator warm-up. [MACD and full-A examples](../../README.md#write-a-strategy)
 - Read actual holdings from `day.account.quantity(symbol)` and recent fills from `day.fills`. Rust sizes orders from prior marks and available cash, then checks trading permissions at the next eligible open. Rust owns lot rounding, T+1, fees and the ledger. A blocked sale can leave a stock in the account across several callbacks. [Account-aware strategy](../../specs/examples/blocked_rotation.py) · [Execution rules](../../README.md#a-share-trading-rules)
+
+For equal weights, divide the portfolio in units of 0.00000001. A raw `1 / 3` has more precision than the SDK accepts. This example rounds each share down, then gives one extra unit to each of the first symbols in sorted order until the remainder is used. Three symbols receive `0.33333334`, `0.33333333` and `0.33333333`, totaling exactly one.
+
+```python
+from decimal import Decimal
+
+
+def equal_weights(selected: list[str]) -> dict[str, Decimal]:
+    symbols = sorted(set(selected))
+    if not symbols:
+        return {}
+    unit = Decimal("0.00000001")
+    units, remainder = divmod(100_000_000, len(symbols))
+    weights = dict.fromkeys(symbols, units * unit)
+    for symbol in symbols[:remainder]:
+        weights[symbol] += unit
+    return weights
+```
 
 Test a signal on a small price sequence that crosses its threshold. Then run it through `backtest` and check the decision date, first eligible fill and closing account. Use a fresh instance for each run of a stateful strategy. The following example waits until A has sold before targeting B. It creates its own data.
 
@@ -51,7 +69,7 @@ The example buys 3,600 shares of B after the sale of A and ends with CNY 19,990 
 
 ## Connect historical data
 
-For a TuShare download, a vendor CSV or Parquet import, or a reusable provider for point-in-time queries, follow [Data sources](references/data-sources.md). It includes the commands that prepare `artifacts/demo-snapshot/snapshot` for the strategy above. Keep acquisition outside `on_close` so several strategies can run against the same saved inputs.
+To create `artifacts/demo-snapshot/snapshot` for the strategy above, follow the five-stock walkthrough. For a vendor CSV, Parquet file or provider for point-in-time queries, follow the data source reference. Keep acquisition outside `on_close` so several strategies can reuse the same inputs. [Five-stock walkthrough](../../docs/examples/tushare-strategies.md#run-the-examples) · [Data sources](references/data-sources.md)
 
 ## View an HTML backtest report
 
@@ -68,6 +86,6 @@ print((run / "report.html").resolve().as_uri())
 PY
 ```
 
-To generate the demo reports from a prepared cache, use the `--engine events` command in [Data sources](references/data-sources.md#prepare-the-tushare-demo). When sharing a report, give the path to the HTML for the requested strategy.
+To generate these reports, run the event command with your cache directory and plan ID. Share the HTML path for the requested strategy. [Five-stock setup and event command](../../docs/examples/tushare-strategies.md#run-the-examples)
 
 A **snapshot** strategy’s `result.save(...)` writes `request.json` and `result.json`. For that run, show its equity, fills and rejection reasons from its own ledger. The event runner sizes orders at the open and produces a separate performance record. [Report example](../../README.md#backtest-reports) · [Same-data comparison](../../docs/examples/rebalance-comparison.md)

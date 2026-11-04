@@ -2,38 +2,7 @@
 
 ## Prepare the TuShare demo
 
-TuShare Pro is the built-in historical provider. Supply `TUSHARE_TOKEN` through the shell environment for planning and downloading. Keep the token out of source files, requests, reports and logs.
-
-From the repository root, create a plan for the five-stock example. The backtest ends on May 31, 2024. The download includes June 3 as the next trading session for scheduling and settlement.
-
-```bash
-uv run tm-research-full-a --data-root data/research/demo plan \
-  --start 2024-01-02 --end 2024-06-03 --statement-start 2023-01-01
-```
-
-Set `PLAN` to the `plan_sha256` printed by that command. Reuse the same plan and data root to resume downloads or run either engine.
-
-```bash
-PLAN='<plan_sha256 from the previous command>'
-uv run tm-research-full-a --data-root data/research/demo download \
-  --plan-sha256 "$PLAN" --phase market --phase status
-uv run tm-research-full-a --data-root data/research/demo status --plan-sha256 "$PLAN"
-uv run tm-research-full-a --data-root data/research/demo verify --plan-sha256 "$PLAN"
-```
-
-Check coverage of the required sessions, price limits, adjustments and suspensions. Once the market and status inputs for the sample are present, choose the output you need. Both commands below reuse the local cache offline.
-
-```bash
-# Daily snapshot for Python strategies, plus the three example ledgers
-uv run python -m trademaster.e2e.demo_strategies --engine snapshot \
-  --data-root data/research/demo --plan "$PLAN"
-
-# Event-runner HTML reports for the three example strategies
-uv run python -m trademaster.e2e.demo_strategies --engine events \
-  --data-root data/research/demo --plan "$PLAN"
-```
-
-The shared market is `artifacts/demo-snapshot/snapshot`. Each event strategy has its own `report.html` under `artifacts/demo-strategies/`. For the long-history ETF benchmark, use its dedicated preparer, which also collects cash distributions. [Five-stock inputs and outputs](../../../docs/examples/tushare-strategies.md) · [ETF benchmark](../../../docs/examples/broad-etf.md)
+Use the five-stock walkthrough to prepare a new TuShare Pro cache or select an existing one, then run the snapshot and event examples. A new cache requires `TUSHARE_TOKEN` in the shell environment. Keep the token out of source files and saved output. The long-history ETF example has a separate preparer that also collects cash distributions. [Five-stock setup and offline runs](../../../docs/examples/tushare-strategies.md#run-the-examples) · [ETF benchmark](../../../docs/examples/broad-etf.md)
 
 ## Import a CSV, Parquet file or another API into a backtest
 

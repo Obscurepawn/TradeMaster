@@ -14,11 +14,13 @@ The JSON runner receives instrument specifications, a fee schedule, timestamped 
 | Event and replay interface | [tm-runner](../../crates/tm-runner/src/lib.rs) parses saved settings and serializes event results. [Native replay](../../crates/tm-python/src/replay.rs) exposes these calls to Python. [tm-replay](../../python/trademaster/replay.py) accepts an event or snapshot request file. [Event wire tests](../../crates/tm-runner/tests/wire.rs) · [Snapshot and saved-event replay tests](../../crates/tm-runner/tests/snapshot_replay.rs) · [Crate rules](../../crates/tm-runner/AGENTS.md) |
 | Metrics and HTML | [reporting package](../../python/trademaster/reporting/__init__.py) builds `PerformanceSeries`, `StrategyMetrics` and trade summaries from executed results. It handles benchmark alignment and exposure diagnostics separately. `build_html_report()` renders the recorded inputs. [Metrics tests](../../tests/test_reporting_metrics.py) · [HTML tests](../../tests/test_reporting_report.py) · [Reporting rules](../../python/trademaster/reporting/AGENTS.md) |
 
-On the event path, target-weight batches sum to one when invested or zero for an exit. The open contributes to sizing. A rejection gives the price limit that blocked an order. In the saved results, match a rejection or fill to its order and event sequence, then inspect the corresponding postings and subsequent account value.
+On the event path, target-weight batches sum to one when invested or zero for an exit. The open contributes to sizing.
+
+To trace a rejected order in the saved JSON, read its `code` and `message` in `rejections`. Match its `order_id` to `orders` for the instrument and side. For a price-limit rejection, use its `event_time` to find the `session_open` event in the request, then read that instrument’s `open_scaled`, `up_limit_scaled` and `down_limit_scaled`. Fills also carry `order_id` and `event_time`, alongside the executed quantity, price and costs.
 
 ## Replay the three-session example
 
-From the repository root, build the event runner and replay the supplied JSON request. It starts with CNY 2,000, targets 100 shares at the next open and exits the position on the third session.
+From the repository root, replay the supplied JSON request. It starts with CNY 2,000, targets 100 shares at the next open and exits the position on the third session.
 
 ```bash
 uv run tm-replay docs/examples/round-trip.json > result.json
@@ -48,6 +50,8 @@ sell 100 @ 11.00
 Ending balance: 2087.32
 ```
 
+For a rejection example, copy the request, set `initial_cash_scaled` to `"100000000"` (CNY 1) and replay the copy. The first rejection identifies `order:buy` at `2025-01-03T01:30:00Z` with code `insufficient_cash`. The corresponding order identifies the attempted purchase as 100 shares of `600000.SH`.
+
 Change a target or fee in the [example request](../examples/round-trip.json) and run it again. The JSON result includes orders, fills, rejections, cash, positions and account value at each step.
 
 ## Market samples and strategy runs
@@ -73,5 +77,7 @@ Python's [contracts.py](../../python/trademaster/contracts.py) supplies the publ
 
 
 ## Older event archives
+
+In a new event bundle, `report-input.json` records `monthly_return_basis` as `previous_month_close`. Older bundles omit that field and measure each month from its first observed equity. Bundle verification rebuilds the HTML using the convention saved with that run. To view the month-end calculation for a historical example, rerun it into a fresh output directory. [Five-stock report commands](../examples/tushare-strategies.md#run-the-examples)
 
 The three TuShare demo bundles described in the [comparison](../examples/rebalance-comparison.md) reproduce their saved result bytes and full reports. Two earlier archives also illustrate what the request and report versions identify. For the January 2025 cross-sectional sample, both the pre-migration executable and the native extension reproduce the original trades and equity. The original archive sorted its signal rows by signal ID, which gives its result file a different hash. The early ETF request reproduces its ledger bytes. Its report input uses an earlier set of fields, so verification stops at the report. The original reports and requests remain available for inspection.

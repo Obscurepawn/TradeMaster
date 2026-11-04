@@ -14,7 +14,9 @@ Run these commands from the repository root. `uv sync --locked --extra dev` inst
 | `uv run python -m trademaster.strategies.industry_fundamental --help` | The module accepts dates, initial cash, portfolio selection settings and historical industry policy. A completed run prints paths to the bundle manifest, HTML, Markdown and summary. [Usage and options](../../python/trademaster/strategies/industry_fundamental/README.md) · [Parser](../../python/trademaster/strategies/industry_fundamental_top5/__main__.py) |
 | `uv run python -m trademaster.strategies.industry_fundamental_top5 --help` | Historical command for the same strategy. The [compatibility guide](../../python/trademaster/strategies/industry_fundamental_top5/README.md) records the settings used in earlier runs. |
 
-The [four-session blocked-sale example](../../specs/examples/blocked_rotation.py) runs with `uv run python specs/examples/blocked_rotation.py`. It prints daily cash and equity and writes the request and result under `artifacts/blocked-rotation`. To reproduce the event-history timing experiment, pass the release binary to the [profiling script](../../specs/examples/profile_replay.py). Its output reports median time by session count for a fixed 16-symbol universe.
+The [four-session blocked-sale example](../../specs/examples/blocked_rotation.py) runs with `uv run python specs/examples/blocked_rotation.py`. It prints daily cash and equity and writes the request and result under `artifacts/blocked-rotation`.
+
+Run `uv run python specs/examples/profile_replay.py` to time the installed Rust extension on 16 instruments over 64, 128, 256 and 512 sessions. The script prints the median replay time in seconds for each history length. [Profiling script](../../specs/examples/profile_replay.py)
 
 ## Factor definitions and values
 
@@ -36,7 +38,7 @@ The [four-session blocked-sale example](../../specs/examples/blocked_rotation.py
 | Command | Input and result |
 |---|---|
 | `plan` | Accepts a date range, statement start and benchmarks. Produces the acquisition plan. |
-| `download`, `status`, `verify` | Resume pending tasks, inspect counts or rehash completed provider objects. `download --max-tasks N` limits work in this invocation. `--phase` restricts the endpoint group. |
+| `download`, `status`, `verify` | Resume pending tasks or inspect counts by status. `download --max-tasks N` limits work in this invocation. `--phase` restricts the endpoint group. Once the whole plan has finished, `verify` checks its recorded outcomes and completed objects. |
 | `reconcile-universe` | Reconciles instrument identities against cached market evidence when the current security list omitted historical names. |
 | `materialize` | Builds the market panel, factor values and labels for the requested observation frequency and return horizons. Writes a panel manifest under `--output-root`. |
 | `materialize-fundamental` | Takes a plan and a specific panel manifest, then writes fundamental inputs and outputs for the evidenced scope. |

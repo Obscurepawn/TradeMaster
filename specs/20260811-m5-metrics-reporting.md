@@ -17,6 +17,8 @@ M5 reads the saved run records, benchmark series, and exposure observations. It 
 
 Show normalized cumulative returns for the strategy and any number of user-selected benchmarks on one chart. Separate plots show drawdown, days underwater, rolling volatility and Sharpe, and monthly returns as a heatmap. The report also includes stacked industry and market-cap exposures, turnover and costs, and a table of the main metrics. Embed Plotly JS for offline viewing. Give each chart a title and units, and distinguish missing observations from undefined metrics. The manifest identifies the `run_id`, `snapshot_id`, `strategy_id`, benchmarks, and input digests.
 
+Each month’s return is its last observed closing NAV divided by the previous calendar month’s last observed closing NAV, minus one. The first month starts at the first observed NAV. The last month ends at the last available close, even when the sample ends mid-month. A month with no observations and the month immediately after it have no return value. New event reports record `monthly_return_basis: previous_month_close` in `report-input.json`. When the field is absent, replay uses the archived within-month calculation, chart guide and input digest to reproduce the original HTML.
+
 ## Test and implementation sequence
 
 1. Red. Hand-calculate returns, volatility, Sharpe ratio, maximum drawdown, time to recovery, and time underwater from a NAV series.
@@ -38,3 +40,9 @@ Match hand-calculated results field by field. Return `None` for undefined values
 - The first focused run passed 5 tests. One independent review found 0 Critical and 4 High issues involving NAV components, costs when there are no fills, benchmark metrics with short samples or zero variance, and verification of the metrics and manifest embedded in HTML.
 - Failing regression tests led to enforcing `cash + market_value = NAV`, preserving individual cost components and average NAV, and returning `None` for undefined beta, alpha, or correlation. The HTML builder recalculates strategy metrics and records a deterministic input SHA-256. No further local review was held.
 - Final checks passed for 6 focused tests and 128 Python tests, including the real Tushare smoke test. Ruff, strict mypy (30 source files), wheel/sdist builds, Rust formatting, Clippy, 39 Rust tests, doc-tests, the diff check, and the scan for literal credentials passed. M5 was complete.
+
+### Monthly returns across a month boundary
+
+- The HTML regression initially reported a 10% January gain from 121 to 133.1. Including the move from December’s last close of 110 gives 21%. The new bundle test also failed because the report inputs omitted the calculation basis.
+- The [reporter](../python/trademaster/reporting/__init__.py) now uses the previous month’s close. The [event bundle](../python/trademaster/e2e/__init__.py) saves the basis and selects it during replay. The [heatmap test](../tests/test_reporting_report.py) covers a partial first month, a year boundary, a single-observation month, a missing month and the resumption of returns. The [bundle tests](../tests/test_e2e_orchestrator.py) rebuild both formats, including an unversioned two-month report checked against its original SHA-256.
+- The weekly momentum event ledger closed at CNY 107,650.01 on March 29, 2024, CNY 109,945.27 on April 1 and CNY 105,129.30 on April 30. April’s return is −2.34%. The archived report used April 1 as its baseline and showed −4.38%. All three original TuShare demo bundles reproduced their saved HTML bytes. The 14 reporting, orchestrator and demo runner tests passed.

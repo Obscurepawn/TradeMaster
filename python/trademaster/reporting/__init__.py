@@ -9,6 +9,7 @@ import statistics
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from enum import StrEnum
 from html import escape
 from itertools import pairwise
 from pathlib import Path
@@ -309,6 +310,34 @@ def _normalized(values: tuple[Decimal, ...]) -> list[float]:
     return [float(value / base - 1) for value in values]
 
 
+class MonthlyReturnBasis(StrEnum):
+    PREVIOUS_MONTH_CLOSE = "previous_month_close"
+    FIRST_OBSERVATION = "first_observation"  # Used by archived event reports.
+
+
+def _monthly_returns(
+    strategy: PerformanceSeries, basis: MonthlyReturnBasis
+) -> dict[tuple[int, int], float | None]:
+    first_nav: dict[tuple[int, int], Decimal] = {}
+    last_nav: dict[tuple[int, int], Decimal] = {}
+    for event_time, nav in zip(strategy.event_times, strategy.net_asset_values, strict=True):
+        month = (event_time.year, event_time.month)
+        first_nav.setdefault(month, nav)
+        last_nav[month] = nav
+
+    first_month = next(iter(first_nav))
+    returns = {}
+    for month, close in last_nav.items():
+        if basis == MonthlyReturnBasis.FIRST_OBSERVATION or month == first_month:
+            base: Decimal | None = first_nav[month]
+        else:
+            year, month_number = month
+            previous = (year, month_number - 1) if month_number > 1 else (year - 1, 12)
+            base = last_nav.get(previous)
+        returns[month] = float(close / base - 1) if base is not None else None
+    return returns
+
+
 def _figure_html(
     figure: go.Figure, *, include_plotlyjs: bool, div_id: str
 ) -> str:
@@ -322,7 +351,16 @@ def _figure_html(
     return value
 
 
-def _metric_guide_html(*, annual_sessions: int, rolling_window: int) -> str:
+def _metric_guide_html(
+    *, annual_sessions: int, rolling_window: int, monthly_return_basis: MonthlyReturnBasis
+) -> str:
+    monthly_guide = (
+        "每月首末观测净值计算的月度收益；绿色为正、红色为负。"
+        if monthly_return_basis == MonthlyReturnBasis.FIRST_OBSERVATION
+        else "本月最后一次观测净值除以上月最后一次观测净值，再减 1。"
+        "样本首月从首次观测算起，末月算到最后一次观测。"
+        "整月缺少观测时，该月和次月留空。绿色为正，红色为负。"
+    )
     return (
         "<section class='metric-guide'><h2>指标与图表阅读指南</h2>"
         "<p>当前报告按 "
@@ -392,7 +430,7 @@ def _metric_guide_html(*, annual_sessions: int, rolling_window: int) -> str:
         "<tr><td>Underwater Duration</td>"
         "<td>从上一次净值新高至当前仍未创新高的自然日数；回到 0 代表创出新高。</td></tr>"
         "<tr><td>Monthly Return Heatmap</td>"
-        "<td>每月首末观测净值计算的月度收益；绿色为正、红色为负。</td></tr>"
+        f"<td>{monthly_guide}</td></tr>"
         "<tr><td>Transaction Costs</td>"
         "<td>拆分展示佣金、税费、过户费和滑点，纵轴单位为账户本币。</td></tr>"
         "<tr><td>Industry / Market-cap Exposure</td>"
@@ -411,6 +449,7 @@ def build_html_report(
     trade_summary: TradeSummary,
     exposures: tuple[ExposureObservation, ...],
     annual_sessions: int = 252,
+    monthly_return_basis: MonthlyReturnBasis = MonthlyReturnBasis.PREVIOUS_MONTH_CLOSE,
 ) -> None:
     if annual_sessions <= 0:
         raise ValueError("annual sessions must be positive")
@@ -508,24 +547,10 @@ def build_html_report(
     )
     underwater.update_layout(title="Underwater Duration", yaxis_title="Days")
 
-    month_end: dict[tuple[int, int], Decimal] = {}
-    month_start: dict[tuple[int, int], Decimal] = {}
-    for event_time, nav in zip(
-        strategy.event_times, strategy.net_asset_values, strict=True
-    ):
-        key = (event_time.year, event_time.month)
-        month_start.setdefault(key, nav)
-        month_end[key] = nav
-    years = sorted({year for year, _ in month_end})
+    month_returns = _monthly_returns(strategy, monthly_return_basis)
+    years = sorted({year for year, _ in month_returns})
     monthly_values = [
-        [
-            (
-                float(month_end[(year, month)] / month_start[(year, month)] - 1)
-                if (year, month) in month_end
-                else None
-            )
-            for month in range(1, 13)
-        ]
+        [month_returns.get((year, month)) for month in range(1, 13)]
         for year in years
     ]
     monthly = go.Figure(
@@ -631,6 +656,8 @@ def build_html_report(
             for item in exposures
         ],
     }
+    if monthly_return_basis != MonthlyReturnBasis.FIRST_OBSERVATION:
+        input_summary["monthly_return_basis"] = monthly_return_basis.value
     canonical_input = json.dumps(
         input_summary, sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
@@ -693,6 +720,7 @@ def build_html_report(
     metric_guide_html = _metric_guide_html(
         annual_sessions=annual_sessions,
         rolling_window=rolling_window,
+        monthly_return_basis=monthly_return_basis,
     )
     sections = [
         _figure_html(

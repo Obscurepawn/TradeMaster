@@ -56,10 +56,12 @@ Milliseconds below are medians from 25 trials after one warm-up per mode, on an 
 
 The native SDK prepares the Rust market index at snapshot open and reuses it on every subsequent run. On this sample the repeated detailed runs save about two milliseconds each. The timing script uses the original MACD implementation, which recalculates exponential averages from its full visible price history. The [current snapshot demo](../../README.md#write-a-strategy) updates the same averages once per close.
 
-To reproduce the two historical columns, use the [timing script from that comparison](https://github.com/Obscurepawn/TradeMaster/blob/5dc86ce81f45de862c42c24c2e074187d623fcf5/specs/examples/profile_backtest.py) in each original SDK environment. To measure the current SDK, run the [current timing script](../../specs/examples/profile_backtest.py) below. It rotates strategy order, records every sample and hashes the targets plus the complete ledger. The output path is a JSON file. The local comparison under `artifacts/native-comparison/` contains `before.json`, `after.json`, a manifest of the measured inputs and binaries, and the old Linux SDK used for this run.
+The table records a historical comparison. Its process-based SDK and the manifest identifying the measured binaries were kept in the original local benchmark environment. The public repository includes the [timing script used for those measurements](https://github.com/Obscurepawn/TradeMaster/blob/5dc86ce81f45de862c42c24c2e074187d623fcf5/specs/examples/profile_backtest.py).
+
+To measure the current SDK, first prepare the shared five-stock snapshot. The command below rotates the strategy order and writes every sample, plus a hash of each strategy’s targets and ledger, to `artifacts/native-timings.json`. [Prepare the snapshot](tushare-strategies.md#run-the-examples) · [Current timing script](../../specs/examples/profile_backtest.py)
 
 ```bash
-uv run python specs/examples/profile_backtest.py artifacts/rebalance-comparison/snapshot --repeats 25 --output native-timings.json
+uv run python specs/examples/profile_backtest.py artifacts/demo-snapshot/snapshot --repeats 25 --output artifacts/native-timings.json
 ```
 
 ## Historical command-line timings
@@ -76,22 +78,19 @@ Times are medians on an AMD Ryzen 7 8845H, Linux x86-64 under WSL2, Rust 1.97.1 
 
 A separate run of the complete Python commands took **3.77 seconds** for the event path and **2.71 seconds** for the snapshot path, each running all three strategies from the same local data into a fresh directory. The event command also writes and verifies HTML audit bundles. The snapshot command writes one shared market plus portable requests and ledger results. Both full commands peaked near 475 MiB, mostly outside the Rust execution measured above.
 
-The Python momentum and moving-average callbacks read only the most recent 21 sessions. MACD keeps the full prefix for its exponential averages. For repeated runs with the same decisions, pass a dated table of targets to avoid recalculating the indicators. A long-history run with new parameters would also benefit from computing MACD in a single pass.
+In this historical run, the momentum and moving-average callbacks read up to 21 sessions and MACD recalculated its averages from the full price history. The current example updates MACD once per session. For repeated runs with the same decisions, pass a dated table of targets to reuse them.
 
 ## Repeat the Tushare comparison
 
-Both paths use the original plan, five candidate stocks, indicator parameters and initial account. The sample reads 392 verified source objects for 490 stock-days. The snapshot stores the daily buy and sell permissions alongside prices, and stores the adjusted closing prices for the Python indicators. Both runners use the same commission, tax, transfer-fee and slippage settings. [Original Tushare runs](tushare-strategies.md)
+Follow the five-stock guide to prepare the data and generate the event bundles. Keep the same `DATA_ROOT` and `PLAN` in your shell for the comparison below. Both engines use the same candidate stocks, indicator parameters, opening permissions and costs. The published comparison used 392 source objects for 490 stock-days. [Prepare the TuShare runs](tushare-strategies.md#run-the-examples)
 
 ```bash
-# Create the original event bundles if they are not present.
-uv run python -m trademaster.e2e.demo_strategies --engine events
-# Run just the snapshot path.
-uv run python -m trademaster.e2e.demo_strategies --engine snapshot
-# Compare all daily accounts and timed runs.
-uv run python -m trademaster.e2e.compare_rebalance --repeats 15
+uv run python -m trademaster.e2e.compare_rebalance \
+  --data-root "$DATA_ROOT" --plan "$PLAN" \
+  --legacy-root artifacts/demo-strategies --repeats 15
 ```
 
-Set `--data-root` and `--plan` on each command to use another copy of the source plan. The comparison validates the original bundles, replays their saved requests and checks that the two paths received the same dated target portfolios. The May 31 decision is first eligible on June 3, after the sample’s final valuation.
+The comparison verifies the event bundles, replays their requests and checks that the two engines received the same dated targets. The May 31 decision is first eligible on June 3, after the sample’s final valuation.
 
 Under `artifacts/rebalance-comparison/`, `comparison.json` records the snapshot ID, engine identification, costs, target outcomes and all timing samples. The per-strategy files let you trace each difference back to the opening trade.
 

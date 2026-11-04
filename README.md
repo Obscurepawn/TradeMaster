@@ -84,7 +84,7 @@ class MacdTiming:
         return None
 ```
 
-With the [TuShare example data](docs/examples/tushare-strategies.md#run-the-examples) prepared, run `uv run python -m trademaster.e2e.demo_strategies --engine snapshot` to create the five-stock snapshot. The same snapshot accepts the strategy defined above.
+Follow the five-stock guide through its `--engine snapshot` command. It uses the same data directory and plan ID as the download and writes the snapshot used below. [Prepare the TuShare example](docs/examples/tushare-strategies.md#run-the-examples)
 
 ```python
 market = Snapshot.open("artifacts/demo-snapshot/snapshot")
@@ -170,11 +170,9 @@ The event runner writes a standalone HTML report you can open offline. Zoom in o
 
 This report follows the weekly momentum strategy over 98 trading sessions. The return chart compares the strategy with buying and holding each of its five candidate stocks. The strategy finished up **4.67%**, with a maximum drawdown of **8.81%** and **CNY 696.06** in trading costs.
 
-With the example data prepared, run the command below and open `artifacts/demo-strategies/cross-sectional-momentum/report.html` in a browser. [Prepare the TuShare example data](docs/examples/tushare-strategies.md#run-the-examples)
+The monthly heatmap uses the previous month’s last observed equity as its starting value. April 2024 returned **−2.34%**, from CNY 107,650.01 at the March close to CNY 105,129.30 at the April close. The first month in the sample starts at its first observed equity.
 
-```bash
-uv run python -m trademaster.e2e.demo_strategies --engine events
-```
+Run the five-stock guide’s `--engine events` command with your data directory and plan ID, then open `artifacts/demo-strategies/cross-sectional-momentum/report.html` in a browser. [Generate the TuShare example reports](docs/examples/tushare-strategies.md#run-the-examples)
 
 ## Research a factor
 
