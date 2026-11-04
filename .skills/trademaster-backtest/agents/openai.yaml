@@ -1,0 +1,3 @@
+interface:
+  display_name: "TradeMaster Backtesting"
+  short_description: "Build strategies, connect data and inspect backtest reports"

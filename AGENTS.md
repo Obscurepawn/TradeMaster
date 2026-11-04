@@ -1,5 +1,7 @@
 # TradeMaster Agent Guide
 
+For strategy implementation, historical data imports, TuShare setup or backtest reports, use the repository’s [TradeMaster backtesting skill](.skills/trademaster-backtest/SKILL.md).
+
 ## Current system
 
 TradeMaster supports reproducible research and backtesting for A-shares and ETFs. Python

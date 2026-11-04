@@ -6,7 +6,7 @@ TradeMaster is a Python and Rust backtesting toolkit for Chinese A-shares and ET
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB)](https://www.python.org/) [![Rust 1.97+](https://img.shields.io/badge/Rust-1.97%2B-924514)](https://www.rust-lang.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue)](LICENSE)
 
-[Run the example](#run-the-example) · [A-share trading rules](#a-share-trading-rules) · [Write a strategy](#write-a-strategy) · [Fifteen-year benchmark](#fifteen-year-benchmark) · [Backtest reports](#backtest-reports) · [Research a factor](#research-a-factor) · [Documentation](docs/README.md)
+[Run the example](#run-the-example) · [A-share trading rules](#a-share-trading-rules) · [Write a strategy](#write-a-strategy) · [Fifteen-year benchmark](#fifteen-year-benchmark) · [Backtest reports](#backtest-reports) · [Research a factor](#research-a-factor) · [Use a coding agent](#use-a-coding-agent) · [Documentation](docs/README.md)
 
 ## Run the example
 
@@ -231,6 +231,25 @@ flowchart TD
 Factor reports measure price changes over a chosen period. Strategy reports use the account’s simulated fills, including delayed exits, and deduct the configured costs.
 
 The industry strategy uses adjusted prices for trades and valuations. Its guide describes how it handles a missing daily bar, cash dividends and splits. [Industry strategy accounting](python/trademaster/strategies/industry_fundamental_top5/README.md)
+
+## Use a coding agent
+
+Open this repository in your coding agent and include the skill path in your request. This example works on a fresh checkout with the project dependencies installed.
+
+> Read `.skills/trademaster-backtest/SKILL.md`. Run the four-session blocked-sale example and explain when the account could first buy B and how much cash it kept.
+
+With a full-A snapshot already prepared, you can ask the agent to implement a strategy against real data.
+
+> Read `.skills/trademaster-backtest/SKILL.md`. Implement a weekly strategy that buys the five A-shares with the highest 20-session returns. Use the saved full-A snapshot and show the first decision, its orders and the fills.
+
+The same skill covers publishing a snapshot from your own data, preparing TuShare history, and opening an event run’s HTML report. Agents that read the root `AGENTS.md` can find the skill there. [TradeMaster backtesting skill](.skills/trademaster-backtest/SKILL.md)
+
+To use the named shortcut `$trademaster-backtest` in Codex, link the skill once from the repository root on Linux, macOS or WSL. Then open a chat in this checkout and include the shortcut in your request.
+
+```bash
+mkdir -p .agents/skills
+ln -s ../../.skills/trademaster-backtest .agents/skills/trademaster-backtest
+```
 
 ## Development
 
