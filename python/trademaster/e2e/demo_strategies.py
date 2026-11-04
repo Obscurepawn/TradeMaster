@@ -159,7 +159,7 @@ def run_snapshot_demo(snapshot: Snapshot, name: str) -> BacktestResult:
         raise ValueError(f"unknown demo: {name}")
     return backtest(
         snapshot,
-        DemoStrategy(name),
+        demo.MacdTiming(TIMING_STOCK) if name == "macd" else DemoStrategy(name),
         schedule="week_end" if name == "cross-sectional-momentum" else "daily_close",
         initial_cash=100_000,
         detail=True,

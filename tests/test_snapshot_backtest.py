@@ -455,7 +455,7 @@ def test_strategy_waits_for_sale_and_receives_fills_in_summary_mode(tmp_path: Pa
     assert run.raw == batch.raw
 
 
-def test_weekly_strategy_reads_intervening_trades_at_the_next_decision(tmp_path: Path) -> None:
+def test_weekly_on_close_reads_intervening_trades_at_the_next_decision(tmp_path: Path) -> None:
     sessions = (*DAYS, date(2024, 1, 12))
     snap = Snapshot.create(
         tmp_path,
@@ -467,7 +467,7 @@ def test_weekly_strategy_reads_intervening_trades_at_the_next_decision(tmp_path:
     observed: list[BacktestDay] = []
 
     class BuyAtFirstClose:
-        def on_decision(self, day: BacktestDay) -> dict[str, Decimal] | None:
+        def on_close(self, day: BacktestDay) -> dict[str, Decimal] | None:
             observed.append(day)
             return {"A": Decimal(1)} if len(observed) == 1 else None
 
@@ -479,13 +479,16 @@ def test_weekly_strategy_reads_intervening_trades_at_the_next_decision(tmp_path:
     assert second.account.sellable_quantity("A") == second.fills[0].quantity
 
 
-def test_strategy_error_propagates_and_next_run_starts_fresh(tmp_path: Path) -> None:
+def test_on_close_wins_over_on_decision_and_propagates_its_error(tmp_path: Path) -> None:
     snap = weekly_snapshot(tmp_path)
     sessions = []
     error = LookupError("invalid factor")
 
     class FailAtSecondClose:
-        def on_decision(self, day: BacktestDay) -> dict[str, Decimal]:
+        def on_decision(self, day: BacktestDay) -> None:
+            pytest.fail("Only on_close should be called when both hooks exist")
+
+        def on_close(self, day: BacktestDay) -> dict[str, Decimal]:
             sessions.append(day.session)
             if len(sessions) == 2:
                 assert day.account.quantity("B") > 0

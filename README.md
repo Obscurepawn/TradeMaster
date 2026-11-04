@@ -2,6 +2,8 @@
 
 TradeMaster is a Python and Rust backtesting toolkit for Chinese A-shares and ETFs. At each scheduled close, a Python strategy sees its holdings and recent fills and chooses portfolio weights. Rust uses the same daily snapshot to calculate orders, simulate fills and track the account after fees. Interactive HTML reports show returns against a benchmark, drawdowns and trading costs. The research tools evaluate factors across the historical A-share universe.
 
+**Data sources.** TuShare Pro is the only built-in historical data provider. Set `TUSHARE_TOKEN` to download its data once, then run the saved snapshot offline. To use data from another source, supply your own sessions, instruments, daily prices and optional features to `Snapshot.create`. [Snapshot inputs](docs/reference/snapshot-backtest.md#market-inputs-and-decision-timing)
+
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB)](https://www.python.org/) [![Rust 1.97+](https://img.shields.io/badge/Rust-1.97%2B-924514)](https://www.rust-lang.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue)](LICENSE)
 
 [Run the example](#run-the-example) · [Write a strategy](#write-a-strategy) · [Fifteen-year benchmark](#fifteen-year-benchmark) · [Backtest reports](#backtest-reports) · [Research a factor](#research-a-factor) · [Documentation](docs/README.md)
@@ -29,31 +31,73 @@ Monday's sell order is rejected. Tuesday's sale brings in CNY 71,995 after fees.
 
 ## Write a strategy
 
-The example ranks the scores published by Friday's close. A target of 80% in B also tells Rust to exit A. An empty portfolio asks for cash. Returning `None` keeps the current target in effect.
+Define `on_close(day)` to choose portfolio weights after Rust has processed that session’s trades and valued the account. The MACD example trades China Merchants Bank (`600036.SH`). Each close updates the 12- and 26-session exponential moving averages. Their difference is the MACD line. When it crosses above its 9-session signal average, the strategy targets 100% in the stock. When it crosses below, the strategy targets cash.
 
 ```python
 from decimal import Decimal
-from math import isfinite
+
+from trademaster.backtest import Snapshot, backtest
+from trademaster.strategies.demo import MacdSpread
 
 
-class WeeklyRotation:
-    def on_decision(self, day):
-        ranking = (
-            (-score, symbol)
-            for symbol, score in day.scores("rotation_score").items()
-            if score is not None and isfinite(score)
-        )
-        winner = min(ranking, default=None)
-        if winner is None:
+class MacdTiming:
+    def __init__(self, symbol):
+        self.symbol = symbol
+        self.macd = MacdSpread(fast=12, slow=26, signal=9)
+        self.previous = None
+
+    def on_close(self, day):
+        close = day.closes(self.symbol, adjusted=True, limit=1)[-1]
+        current = self.macd.update(close)  # MACD line minus its signal average
+        previous = self.previous
+        self.previous = current
+
+        if previous is None or current is None:
             return None
-        return {winner[1]: Decimal("0.80")}
+        if previous <= 0 < current:
+            return {self.symbol: Decimal(1)}
+        if previous >= 0 > current:
+            return {self.symbol: Decimal(0)}
+        return None
 ```
 
-To buy B only after the sale of A has cleared, run `uv run python specs/examples/blocked_rotation.py --strategy after-sale`. The daily callback checks `day.account.quantity("A")`. On Tuesday it sees the completed sale and requests 80% B for Wednesday.
+With the [TuShare example data](docs/examples/tushare-strategies.md#run-the-examples) prepared, run `uv run python -m trademaster.e2e.demo_strategies --engine snapshot` to create the five-stock snapshot. The same snapshot accepts the strategy defined above.
 
-The weekly example calls `backtest` with this strategy, a weekly schedule and the initial holding in A. The same API accepts a dated table of weights. [Strategy source](specs/examples/weekly_rotation.py) · [Complete call](specs/examples/blocked_rotation.py) · [Python API and cash-only example](docs/reference/snapshot-backtest.md)
+```python
+market = Snapshot.open("artifacts/demo-snapshot/snapshot")
+result = backtest(market, MacdTiming("600036.SH"), schedule="daily_close",
+                  initial_cash=100_000, detail=True)
+print(result.summary["fill_count"], result.equity[-1]["equity"])  # 5 106823.67
+```
 
-For a real-data comparison, replay weekly stock selection, moving-average timing and MACD timing on the same 98 Tushare sessions. The snapshot comparison shows which fills and daily balances changed under the new sizing rules. [Three-strategy guide](docs/examples/tushare-strategies.md) · [Compare both engines](docs/examples/rebalance-comparison.md) · [Python SDK timings](docs/examples/rebalance-comparison.md#python-sdk-before-and-after-the-native-extension)
+A strategy can also wait for a sale to fill before choosing its next holding. In the four-day example, A must be sold first. The strategy reads the actual share count at each close, then targets 80% in B once A is gone.
+
+```python
+class SwitchAfterSale:
+    def __init__(self):
+        self.sell_requested = False
+        self.buy_requested = False
+
+    def on_close(self, day):
+        if day.account.quantity("A"):
+            if not self.sell_requested:
+                self.sell_requested = True
+                return {}
+        elif not self.buy_requested:
+            self.buy_requested = True
+            return {"B": Decimal("0.80")}
+        return None
+```
+
+| What your strategy controls | Python API |
+|---|---|
+| When to decide | `schedule="daily_close"` calls the strategy after each trading session. `"week_end"` calls it after the last session of each trading week. |
+| What to read | `day.closes(...)` provides price history. `day.scores(name)` returns published values across the listed instruments. `day.account` and `day.fills` show holdings, cash and fills through this close. |
+| What to hold | Return long-only weights for the whole portfolio. Omitted holdings have zero target weight. `{}` targets cash. `None` leaves the existing instruction in effect. Rust can first trade the target at the next eligible open. |
+
+For a precomputed strategy, pass dated weights to `backtest(..., targets=...)`. Existing strategies using `on_decision(day)` follow the same schedule. [MACD implementation](python/trademaster/strategies/demo.py) · [Account-aware example](specs/examples/blocked_rotation.py) · [Python API](docs/reference/snapshot-backtest.md)
+
+The three-strategy example runs weekly momentum, moving-average timing and MACD on the same 98 TuShare sessions. [Strategy guide](docs/examples/tushare-strategies.md) · [Execution comparison and SDK timings](docs/examples/rebalance-comparison.md)
 
 ![Snapshot account values for weekly momentum, moving-average and MACD strategies on the same 98 Tushare sessions.](docs/examples/rebalance-equity.svg)
 

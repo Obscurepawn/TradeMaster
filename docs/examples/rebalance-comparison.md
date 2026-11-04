@@ -54,7 +54,7 @@ Milliseconds below are medians from 25 trials after one warm-up per mode, on an 
 | MACD, detail | 98 | 6.00 → 6.16 | 11.22 → 9.99 | 5.10 → 3.24 | 1.93 → 2.03 |
 | MACD, summary | 98 | 5.80 → 6.28 | 10.96 → 9.71 | 4.88 → 3.16 | 1.96 → 2.04 |
 
-The native SDK prepares the Rust market index at snapshot open and reuses it on every subsequent run. On this sample the repeated detailed runs save about two milliseconds each. The MACD decision still computes exponential averages from its entire visible price history.
+The native SDK prepares the Rust market index at snapshot open and reuses it on every subsequent run. On this sample the repeated detailed runs save about two milliseconds each. The timing script uses the original MACD implementation, which recalculates exponential averages from its full visible price history. The [current snapshot demo](../../README.md#write-a-strategy) updates the same averages once per close.
 
 Run the same [SDK timing script](../../specs/examples/profile_backtest.py) in each SDK environment. It rotates strategy order, records every sample and hashes the targets plus the complete ledger. The output path is a JSON file. The local comparison under `artifacts/native-comparison/` contains `before.json`, `after.json`, a manifest of the measured inputs and binaries, and the old Linux SDK used for this run.
 

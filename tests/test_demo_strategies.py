@@ -1,6 +1,9 @@
+from datetime import date, timedelta
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
+from trademaster.backtest import DailyPrice, Instrument, Snapshot
 from trademaster.strategies.demo import cross_sectional_momentum, macd_cross, moving_average_cross
 
 
@@ -49,6 +52,33 @@ def test_default_macd_waits_for_both_lines_then_finds_both_crossings() -> None:
     assert [(i, d) for i, d in enumerate(decisions) if d is not None] == [
         (34, {"A": Decimal(1)}),
         (36, {"A": Decimal(0)}),
+    ]
+
+
+def test_daily_macd_matches_batch_decisions_before_and_after_a_price_gap(tmp_path: Path) -> None:
+    from trademaster.strategies.demo import MacdTiming
+
+    cycle = [10.0] * 34 + [20.0, 20.0] + [1.0] * 8
+    adjusted = [*cycle, None, *cycle]
+    days = [date(2024, 1, 1) + timedelta(days=i) for i in range(len(adjusted))]
+    snapshot = Snapshot.create(
+        tmp_path,
+        sessions=days,
+        next_session=days[-1] + timedelta(days=1),
+        instruments=[Instrument("A")],
+        daily=[
+            DailyPrice(day, "A", 10, 10, adjusted_close=price, evidence="fixture")
+            for day, price in zip(days, adjusted, strict=True)
+        ],
+    )
+    strategy = MacdTiming("A")
+    decisions = [strategy.on_close(snapshot.day(day)) for day in days]
+    assert decisions == macd_cross("A", adjusted)
+    assert [(i, d) for i, d in enumerate(decisions) if d is not None] == [
+        (34, {"A": Decimal(1)}),
+        (36, {"A": Decimal(0)}),
+        (79, {"A": Decimal(1)}),
+        (81, {"A": Decimal(0)}),
     ]
 
 

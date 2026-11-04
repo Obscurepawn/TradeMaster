@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
 import pyarrow as pa
 
@@ -101,6 +101,11 @@ class BacktestDay(DecisionDay):
 
 class Strategy(Protocol):
     def on_decision(self, day: BacktestDay) -> Weights | None: ...
+
+
+@runtime_checkable
+class CloseStrategy(Protocol):
+    def on_close(self, day: BacktestDay) -> Weights | None: ...
 
 
 @dataclass(frozen=True)
@@ -329,7 +334,7 @@ def _summarize(
 
 def backtest(
     snapshot: Snapshot,
-    strategy: Strategy | None = None,
+    strategy: CloseStrategy | Strategy | None = None,
     *,
     targets: Mapping[date, Weights | None] | Sequence[TargetBatch] | pa.Table | None = None,
     schedule: Schedule = "daily_close",
@@ -340,6 +345,8 @@ def backtest(
 ) -> BacktestResult:
     """Call a strategy at the selected closes or replay dated complete targets.
 
+    A strategy supplies on_close(day) or the legacy on_decision(day). When it
+    supplies both, only on_close is called.
     Dates in a mapping are decision sessions. None keeps the active target, {} exits
     all holdings. A last-session decision is recorded but has no in-sample execution.
     """
@@ -398,6 +405,9 @@ def backtest(
     if strategy is None:
         raw = snapshot._market.run(run, [])
     else:
+        on_close = (
+            strategy.on_close if isinstance(strategy, CloseStrategy) else strategy.on_decision
+        )
 
         def decide(
             index: int, ledger: NativeAccount, trades: list[dict[str, Any]]
@@ -412,7 +422,7 @@ def backtest(
                 Account(ledger),
                 tuple(Fill._from_trade(t) for t in trades),
             )
-            weights = strategy.on_decision(day)
+            weights = on_close(day)
             if weights is None:
                 return None
             row, info = _encode_target(snapshot, TargetBatch(day.session, weights), day)
@@ -452,6 +462,7 @@ __all__ = [
     "BacktestDay",
     "BacktestResult",
     "CashDividend",
+    "CloseStrategy",
     "DailyPrice",
     "DecisionDay",
     "DecisionSlice",

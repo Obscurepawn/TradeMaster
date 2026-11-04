@@ -7,6 +7,8 @@ from math import isfinite
 from statistics import fmean
 from typing import TypeGuard
 
+from trademaster.backtest import DecisionDay
+
 type CloseSeries = Sequence[float | None]
 type Target = dict[str, Decimal] | None
 
@@ -54,31 +56,39 @@ def cross_sectional_momentum(
     return decisions
 
 
-def _average(values: CloseSeries, period: int, *, exponential: bool) -> list[float | None]:
-    """Use the first full window as the seed. A missing observation restarts the window."""
+def _simple_average(values: CloseSeries, period: int) -> list[float | None]:
     window: deque[float] = deque(maxlen=period)
-    average = None
     output = []
-    alpha = 2 / (period + 1)
     for value in values:
         if value is None:
             window.clear()
-            average = None
         else:
             window.append(value)
-            if len(window) == period:
-                if exponential and average is not None:
-                    average += alpha * (value - average)
-                else:
-                    average = fmean(window)
-        output.append(average)
+        output.append(fmean(window) if len(window) == period else None)
     return output
 
 
-def _difference(left: CloseSeries, right: CloseSeries) -> list[float | None]:
-    return [
-        a - b if a is not None and b is not None else None for a, b in zip(left, right, strict=True)
-    ]
+class _Ema:
+    """Seed with the first full window after each gap."""
+
+    def __init__(self, period: int) -> None:
+        self.period = period
+        self.alpha = 2 / (period + 1)
+        self.seed: list[float] = []
+        self.value: float | None = None
+
+    def update(self, value: float | None) -> float | None:
+        if value is None:
+            self.seed.clear()
+            self.value = None
+        elif self.value is not None:
+            self.value += self.alpha * (value - self.value)
+        else:
+            self.seed.append(value)
+            if len(self.seed) == self.period:
+                self.value = fmean(self.seed)
+                self.seed.clear()
+        return self.value
 
 
 def _crossings(symbol: str, differences: CloseSeries) -> list[Target]:
@@ -94,23 +104,58 @@ def _crossings(symbol: str, differences: CloseSeries) -> list[Target]:
     return decisions
 
 
-def _average_spread(
-    closes: CloseSeries, fast: int, slow: int, *, exponential: bool
-) -> list[float | None]:
-    if not 0 < fast < slow:
-        raise ValueError("averages require 0 < fast < slow")
-    prices = [value if _usable_close(value) else None for value in closes]
-    return _difference(
-        _average(prices, fast, exponential=exponential),
-        _average(prices, slow, exponential=exponential),
-    )
-
-
 def moving_average_cross(
     symbol: str, closes: CloseSeries, *, fast: int = 5, slow: int = 20
 ) -> list[Target]:
     """Go long when the fast SMA crosses above the slow SMA, and flat when it crosses below."""
-    return _crossings(symbol, _average_spread(closes, fast, slow, exponential=False))
+    if not 0 < fast < slow:
+        raise ValueError("averages require 0 < fast < slow")
+    prices = [value if _usable_close(value) else None for value in closes]
+    averages = zip(_simple_average(prices, fast), _simple_average(prices, slow), strict=True)
+    spreads = [a - b if a is not None and b is not None else None for a, b in averages]
+    return _crossings(symbol, spreads)
+
+
+class MacdSpread:
+    """Update the MACD line minus its signal line with one adjusted close per session."""
+
+    def __init__(self, *, fast: int, slow: int, signal: int) -> None:
+        if signal < 1:
+            raise ValueError("the signal EMA period must be positive")
+        if not 0 < fast < slow:
+            raise ValueError("averages require 0 < fast < slow")
+        self._fast = _Ema(fast)
+        self._slow = _Ema(slow)
+        self._signal = _Ema(signal)
+
+    def update(self, close: float | None) -> float | None:
+        price = close if _usable_close(close) else None
+        fast, slow = self._fast.update(price), self._slow.update(price)
+        line = fast - slow if fast is not None and slow is not None else None
+        signal = self._signal.update(line)
+        return line - signal if line is not None and signal is not None else None
+
+
+class MacdTiming:
+    """Use a fresh instance for each daily-close backtest."""
+
+    def __init__(self, symbol: str) -> None:
+        self.symbol = symbol
+        self.macd = MacdSpread(fast=12, slow=26, signal=9)
+        self.previous: float | None = None
+
+    def on_close(self, day: DecisionDay) -> dict[str, Decimal] | None:
+        close = day.closes(self.symbol, adjusted=True, limit=1)[-1]
+        current = self.macd.update(close)
+        previous = self.previous
+        self.previous = current
+        if previous is None or current is None:
+            return None
+        if previous <= 0 < current:
+            return {self.symbol: Decimal(1)}
+        if previous >= 0 > current:
+            return {self.symbol: Decimal(0)}
+        return None
 
 
 def macd_cross(
@@ -121,8 +166,5 @@ def macd_cross(
     The MACD line is EMA(fast) minus EMA(slow). Each EMA starts with a full-window
     arithmetic mean. A crossing requires two consecutive observations of both lines.
     """
-    if signal < 1:
-        raise ValueError("the signal EMA period must be positive")
-    line = _average_spread(closes, fast, slow, exponential=True)
-    signal_line = _average(line, signal, exponential=True)
-    return _crossings(symbol, _difference(line, signal_line))
+    macd = MacdSpread(fast=fast, slow=slow, signal=signal)
+    return _crossings(symbol, [macd.update(close) for close in closes])

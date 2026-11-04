@@ -26,7 +26,7 @@ class SwitchAfterSale:
         self.sell_requested = False
         self.buy_requested = False
 
-    def on_decision(self, day: BacktestDay) -> dict[str, Decimal] | None:
+    def on_close(self, day: BacktestDay) -> dict[str, Decimal] | None:
         if day.account.quantity("A"):
             if not self.sell_requested:
                 self.sell_requested = True

@@ -4,7 +4,7 @@
 
 ## Strategy API
 
-Use `backtest(snapshot, strategy=..., schedule=..., initial_account=..., policy=..., detail=...)` and the single-argument callback. At a scheduled close, the SDK passes a `BacktestDay` with the existing `DecisionDay` market interface and two additional fields. Calling `snapshot.day(session)` outside a run still returns the ordinary market view.
+Use `backtest(snapshot, strategy=..., schedule=..., initial_account=..., policy=..., detail=...)` and define `on_close(day)`. Existing `on_decision(day)` strategies use the same schedule. When both methods are present, the SDK calls `on_close` once per scheduled close. At a scheduled close, the SDK passes a `BacktestDay` with the existing `DecisionDay` market interface and two additional fields. Calling `snapshot.day(session)` outside a run still returns the ordinary market view.
 
 | Value | What the strategy can read |
 | --- | --- |
@@ -27,7 +27,7 @@ class SwitchAfterSale:
         self.sell_requested = False
         self.buy_requested = False
 
-    def on_decision(self, day: BacktestDay):
+    def on_close(self, day: BacktestDay):
         if day.account.quantity("A") > 0:
             if not self.sell_requested:
                 self.sell_requested = True
@@ -79,3 +79,7 @@ The first Python regression failed on `day.account` in the original SDK. The fir
 
 
 A clean Linux wheel installation ran both four-session examples and all three TuShare strategies. Its event results, report inputs, HTML and bundle manifests matched the three original demo archives byte for byte. Its snapshot results matched the original full ledgers. The offline suite passed 302 Python tests and 56 Rust tests. Three live provider tests were skipped. The [event replay reference](../docs/reference/execution.md#older-event-archives) describes two older archive formats checked separately.
+
+## Close callback verification
+
+The callback tests initially failed on a strategy that defined only `on_close` and on the choice between two methods. The SDK now resolves the method once per run. The tests verify weekly delivery of intervening fills, selection of `on_close` when both names exist and propagation of a strategy error. The [README strategies](../README.md#write-a-strategy) run against the 98-session MACD and four-session blocked-sale examples. The daily MACD, moving-average and momentum demos reproduced every saved target and the full ledger. The installed wheel reproduced the MACD ledger as well. The offline suite passed 330 tests and skipped three live provider checks.
