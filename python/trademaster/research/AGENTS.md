@@ -1,22 +1,29 @@
-# Research Pipeline Guide
+# Research pipeline
 
-This module owns reproducible research orchestration over already isolated data
-providers. It may plan and resume bulk downloads, assemble PIT-safe factor panels,
-build labels, run factor diagnostics, and produce research reports.
+Use the existing provider interfaces to plan and resume bulk downloads, build
+point-in-time factor panels and labels, run diagnostics and produce reports.
 
-Bulk download plans are immutable and content-addressed. Parquet provider responses
-remain authoritative; DuckDB stores task progress and discovery only. A successful
-API call is not a coverage proof. Historical universe, endpoint-specific absence,
-provider permissions, and source-history limitations must remain separate states.
-Every completed object must bind the plan task's canonical request SHA to both the
-evidence record and embedded Parquet request metadata. Workers claim tasks through an
-owner/expiry lease; never fetch after a failed claim or commit after losing the lease.
-Builders consume `completed_evidence_snapshot`, not private DuckDB task tables.
+## Downloads
 
-Research factor panels never mutate execution or ledger state. Close-derived
-features cannot use a same-close forward-return entry. Every evaluation binds the
-factor definition, source objects, universe policy, label alignment, and config.
-Date-only financial announcements become available on the next eligible session;
-when revision publication time is absent, revised rows cannot be backfilled to the
-original announcement date. Dense-session factor windows retain null/suspended rows,
-and `is_valid` always implies a finite factor value or forward return.
+Keep download plans immutable and address them by content hash. Parquet holds
+provider responses. DuckDB tracks tasks and indexes objects. Verify coverage
+separately from API success. Track the historical universe, each endpoint's
+rules for absent rows, provider permissions and limits on historical data as
+distinct states.
+
+For a completed task, match the request SHA against both the evidence record
+and the request metadata in Parquet. A worker can fetch once it holds the
+task's lease and can commit only while it still holds that lease. Builders read
+`completed_evidence_snapshot`. Keep the DuckDB task tables private.
+
+## Panels and evaluation
+
+Date-only financial announcements become available in the next eligible
+session. If a revision has no publication time, never backfill its values to
+the original announcement date. Keep rows for missing observations and
+suspensions in dense-session windows. A factor value or forward return marked
+`is_valid` must be finite.
+
+For a feature computed at the close, the forward-return entry must be later
+than that close. Record the factor definition, source objects, universe policy,
+label alignment and configuration for each evaluation.

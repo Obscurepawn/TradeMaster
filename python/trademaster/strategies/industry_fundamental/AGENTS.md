@@ -1,10 +1,12 @@
-# Industry Fundamental Strategy Guide
+# Industry fundamental strategy
 
-This is the stable public package for the configurable industry fundamental strategy.
-Top1, Top5, and Top-industry variants are configuration values, never type or package
-identities. Factor calculation belongs to `trademaster.factors`; this package owns only
-candidate dimensions, industry selection, target weights, run orchestration, and reports.
+Use this public package for every variant. Select Top1, Top5 or the top
+industries through configuration. Keep one package and strategy type across
+these settings.
 
-Formal runs bind managed factor definitions, materializations, their source snapshots,
-strategy-definition hash, signals, Rust results, summary, and Markdown/HTML reports.
-The legacy `industry_fundamental_top5` package is a compatibility implementation path.
+This package handles candidate dimensions, industry selection, target
+weights, runs and reports. Compute factors in `trademaster.factors`. For a
+formal run, record the managed definitions, materializations and their source
+snapshots, strategy-definition hash, signals, Rust results, summary and
+Markdown and HTML reports. The implementation in `industry_fundamental_top5`
+remains available for compatibility.

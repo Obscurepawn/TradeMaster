@@ -1,0 +1,19 @@
+{
+  "snapshot_id": "bc4cbcd647b372b731b903d728780383265032cdde179df9a6257e9403ce9ea0",
+  "market_sha256": "2ac63c348f9f9aba1e883b2f41e629f311435b147f93a595f0d04dda880e74cf",
+  "features_sha256": "07f6ce497d1506bf42df2dc3c835204cb23086958ccbf3cea444e824be3ec548",
+  "strategies": {
+    "sma200": {
+      "digest": "39aabbb5a62783a275813330338c54d1d8426c1d635c43edf690c540c2a6ddfc",
+      "fill_count": 113,
+      "ending_equity_cny": "202977.32",
+      "cash_dividends_paid_cny": "23896.9"
+    },
+    "buy_and_hold": {
+      "digest": "c8aaa36325b60b5783d5ffe90916e8f7719007eede1d51fddf993d99a765ad08",
+      "fill_count": 2,
+      "ending_equity_cny": "208949.55",
+      "cash_dividends_paid_cny": "36140"
+    }
+  }
+}

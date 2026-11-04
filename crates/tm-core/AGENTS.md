@@ -1,9 +1,11 @@
 # tm-core Guide
 
-This crate owns stable identifiers, exact scalar types, immutable domain
-records, statuses, and shared errors. It contains no provider, strategy,
-execution, or ledger implementation and has no process-global state.
+This crate defines stable identifiers, exact scalar types, immutable domain
+records, statuses, and shared errors. Provider, strategy, execution, and
+ledger implementations belong in other crates or modules. This crate holds
+no process-global state.
 
-Checked constructors and typed `ArtifactRecord` adapters are part of the public
-contract. Formal artifact writers use `typed_artifact_record_batch`; the generic
-row adapter exists for boundary validation and must not replace domain checks.
+The public API includes checked constructors and typed `ArtifactRecord`
+adapters. Writers use `typed_artifact_record_batch` to save run records.
+The generic row adapter checks incoming rows. Domain constructors still
+validate those values before a writer can use them.

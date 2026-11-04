@@ -1,120 +1,78 @@
-# 行业中性基本面 Top5 半年调仓策略
+# Semiannual fundamental strategy selecting up to five stocks per industry
 
 Status: complete
 Owner: Codex
 Updated: 2026-08-12
 
-## 目标
+## Strategy and report configuration
 
-在 TradeMaster 中沉淀一个独立、可配置、可复读的基本面策略：在每个行业内部计算综合基本面
-分数，选择最多 5 只股票，对全部入选标的给出精确等权目标，每半年调仓一次，并使用真实
-Tushare 数据、Rust 权威事件运行时和现有报告层生成策略报告。
+Rank stocks within each industry by a composite fundamental score. Select up to five per industry and equally weight all selected stocks. The standalone strategy accepts a run configuration, replays real Tushare data through the Rust event loop and produces the standard strategy report.
 
-## 本次报告口径
+- **Universe.** Use the latest historical CSI 300 composition available at each rebalance. Keep `all_a_share` available as an extension. The historical experiment applies the current SW2021 level-one industry mapping to all dates because the source returned only current memberships.
+- **Schedule.** Run from 2016-08-12 through 2026-08-11. Form signals at the close of the first trading day on or after the sixth of May and November and execute at the next trading session's open. Expect 20 rebalances.
+- **Capital and sizing.** Start with 500,000 CNY. Rust converts equal target weights to quantities using NAV, opening prices and 100-share lots. Stocks that cannot be bought in one lot remain at zero. The report shows cash left over.
+- **Benchmark and costs.** Use the CSI 300 price index `000300.SH`, commission of 3 bp with a 5 CNY minimum, 5 bp sell-side stamp duty, 0.1 bp SSE stock transfer fee and 5 bp slippage.
 
-- 样本池：每个调仓时点最新可得的沪深300历史成分股；策略配置保留 `all_a_share` 扩展点。
-- 行业：SW2021 一级行业；因接口只返回当前成员，本报告将当前映射静态应用于全部历史截面。
-- 区间：2016-08-12 至 2026-08-11；5 月、11 月首个不早于 6 日的交易日收盘产生信号，下一交易日
-  开盘执行，预期覆盖 20 次半年调仓。
-- 初始资金：500,000 CNY。等权是 target-weight intent；Rust 在执行时按当期 NAV、开盘价和
-  100 股整数手换算，无法买入一手的标的保持 0 持仓并在报告中体现现金，不伪造等权成交。
-- benchmark：沪深300价格指数 `000300.SH`。
-- 费用：佣金 3bp、最低 5 元、卖出印花税 5bp、上交所股票过户费 0.1bp、滑点 5bp。
+## Scoring
 
-## 评分模型
+Within each SW2021 level-one industry, winsorize each indicator at 5%/95% and standardize it as a cross-sectional z-score. A missing value receives the neutral industry score of zero. Both `pe_ttm/pb` valuation fields must be positive, and a candidate needs at least five valid indicators.
 
-先在每个 SW2021 一级行业内对每个指标做 5%/95% winsorize，再做截面 z-score；指标缺失采用
-该行业的中性分 0，但估值字段 `pe_ttm/pb` 必须为正，且至少 5 个指标有效。
-
-| 维度 | 指标与方向 | 总权重 |
+| Group | Indicators and direction | Weight |
 |---|---|---:|
-| 价值 | earnings yield `1/pe_ttm` 15%，book yield `1/pb` 10%，`dv_ttm` 10% | 35% |
-| 质量 | `roe` 15%，`grossprofit_margin` 10%，`ocf_to_or` 10% | 35% |
-| 成长 | `q_sales_yoy` 10%，`q_profit_yoy` 10% | 20% |
-| 安全 | `debt_to_assets` 反向 10% | 10% |
+| Value | Earnings yield `1/pe_ttm` 15%, book yield `1/pb` 10%, `dv_ttm` 10% | 35% |
+| Quality | `roe` 15%, `grossprofit_margin` 10%, `ocf_to_or` 10% | 35% |
+| Growth | `q_sales_yoy` 10%, `q_profit_yoy` 10% | 20% |
+| Safety | Lower `debt_to_assets` scores higher, 10% | 10% |
 
-金融行业常见的 `grossprofit_margin/roa` 缺失不会跨行业惩罚；行业内缺失值为中性，实际有效字段
-数量会写入 selection artifact。得分降序、`instrument_id` 升序作为稳定 tie-break，每行业
-`min(5, eligible_count)`；所有入选标的 target weights 之和精确为 1.00000000。
+Missing fields common in financial companies, such as `grossprofit_margin/roa`, incur no cross-industry penalty. Record each candidate's valid-field count in the selection artifact. Rank by descending score, then ascending `instrument_id`, and take `min(5, eligible_count)` per industry. The selected weights sum to exactly 1.00000000.
 
-## 数据与 PIT 不变量
+## Data, timing and execution
 
-- token 只从 `TUSHARE_TOKEN` 读取，不进入请求 key、Parquet、DuckDB、snapshot 或报告。
-- 每个 Tushare 请求先检查内容寻址 Parquet 缓存；DuckDB 只记录/查询 immutable Parquet。
-- 财务指标只允许 `ann_date` 严格早于 signal date；由于 Tushare 不提供修订实际可用时间，历史
-  回测只使用 `update_flag=0` 原始版本，排除所有 `update_flag=1` 修订值。
-- 估值使用 signal date 前一交易日的 `daily_basic`，规避当日收盘后才发布的截面数据；沪深300
-  成分使用各调仓月最新历史 `index_weight`。
-- Tushare `index_member_all` 当前只返回 `is_new=Y`，对 `is_new=N` 的真实探针返回空表，因此本次
-  报告使用当前 SW2021 一级行业映射并明确标注该限制，不声称它是历史 PIT 行业分类。
-- 股票 OHLC 与涨跌停价使用 `adj_factor` 归一到区间末端的前复权连续价格，以避免送转分红造成
-  虚假收益；这是研究价格执行近似，不等同于逐笔现金分红/拆并股账本。
-- 净值使用 2016-08-12 的现金账户作为基准，此后仅在每个自然周最后一个交易日采样，绩效按
-  52 期年化；
-  交易日历仍完整传给 Rust，用于下一交易日资格、退出重试和 T+1 结算。
-- 每个调仓 selection 与完整 market input 均生成独立 Parquet 和 snapshot manifest；正式 bundle
-  由 verifier 复读 Parquet、重放 Rust 并重建报告。
+1. Read the token only from `TUSHARE_TOKEN`. Keep its value out of request keys, Parquet, DuckDB, snapshots and reports. Check the content-addressed Parquet cache for each Tushare request. DuckDB catalogs and queries the immutable Parquet objects.
+2. A financial statement's `ann_date` must precede the signal date. Tushare does not provide the actual availability time of revisions. Use original versions with `update_flag=0` and exclude revisions with `update_flag=1`.
+3. Use `daily_basic` from the previous trading day because the signal day's cross-section is published after the close. Use the latest historical `index_weight` available in each rebalance month for CSI 300 membership.
+4. A live `index_member_all` probe returned current `is_new=Y` members and zero rows for `is_new=N`. This report uses the current SW2021 mapping throughout and discloses classification survivorship bias. Licensed historical industry data could replace that mapping.
+5. Use `adj_factor` to normalize stock OHLC and limit prices to the period end. Continuous adjusted prices reduce spurious returns around corporate actions. Executing against these prices approximates distributions, splits and consolidations without accounting for each cash or stock movement.
+6. Set the initial NAV to the cash account on 2016-08-12. Sample subsequent NAV and the benchmark on each calendar week's last trading day and annualize at 52 periods. Send the full trading calendar to Rust for next-open eligibility, exit retries and T+1. Weekly sampling does not generate rebalance orders.
+7. Write separate Parquet files and snapshot manifests for every rebalance selection and for the complete market input. The bundle verifier rereads Parquet, replays Rust and rebuilds the report.
 
-## 接口与实现任务
+## Implementation and acceptance
 
 | Task | Owner | Status | Evidence |
 |---|---|---|---|
-| 冻结评分、选择、等权接口 | Codex | complete | 3 Python tests |
-| Rust scheduled target-weight bridge | Codex | complete | 5 engine + 3 runner tests |
-| strategy-local cache/PIT 数据装配 | Codex | complete | 1959 raw Parquet + DuckDB catalog |
-| 真实半年调仓 E2E 与报告 | Codex | complete | 20 rebalances + identical cache replay hashes |
-| 全量验证与文档 | Codex | complete | 142 pytest + Python/Rust/package gates |
+| Define scoring, selection and equal weighting | Codex | complete | 3 Python tests |
+| Connect scheduled target weights to Rust | Codex | complete | 5 engine and 3 runner tests |
+| Assemble strategy cache and PIT inputs | Codex | complete | 1,959 raw Parquet objects and DuckDB catalog |
+| Run and report the real semiannual strategy | Codex | complete | 20 rebalances and matching replay hashes |
+| Verify and document | Codex | complete | 142 Python tests and Python, Rust and package checks |
 
-## 验收标准
+- [x] Hand calculations verify winsorization, z-scores, score direction and weights, Top5 ranking, tie-breaks and equal allocation.
+- [x] At the open, Rust sizes the full target batch from current NAV, open prices and lot sizes, selling before buying. Rust alone updates fills, cash and positions.
+- [x] Across ten years and 20 rebalances, exits use zero targets. A signal at the T close cannot execute before the T+1 open.
+- [x] Tushare data is stored as Parquet with DuckDB-backed cache lookups. The second process made zero provider calls.
+- [x] HTML shows strategy and benchmark returns, drawdowns, rolling risk, a monthly heat map, fees, industry and size exposures, and performance metrics. The credential scan found zero matches. Python, Rust, formatting, lint, typing and package checks passed.
 
-- [x] 手算样本验证 winsorize/z-score/方向/权重、行业 Top5、稳定 tie-break 与精确等权。
-- [x] Rust 在 session open 用实时账户 NAV/开盘价/lot size 消费完整 target-weight batch，先卖后买，
-  不由 Python 模拟现金、成交或持仓。
-- [x] 覆盖十年、20 次半年调仓；退出标的产生零 target，T-close 信号不早于 T+1 open 执行。
-- [x] 真实 Tushare 数据落为 Parquet，DuckDB cache-first；第二进程 provider 调用为 0。
-- [x] HTML 包含收益/benchmark、回撤、rolling risk、月度热力图、费用、行业/市值暴露及常见指标。
-- [x] token 扫描 0 命中；Python/Rust/fmt/lint/type/package gates 全绿。
+## Decisions on 2026-08-12
 
-## Decisions
+An all-A-share Top5 portfolio would often hold more than 140 stocks. With 500,000 CNY and 100-share lots, many could not reach their target weights. The experiment therefore used historical CSI 300 constituents while keeping the selector and data interfaces independent of the universe. Rust calculated the actual holdings after costs, settlement rules and lot rounding.
 
-- 2026-08-12：本次报告用历史沪深300成分而非全 A 股，原因是用户小资金且每行业 Top5 在全 A
-  通常超过 140 只，整数手下无法近似等权。选择器与数据接口不硬编码该 universe。
-- 2026-08-12：报告使用 Rust target-weight runtime，而不是 Python fractional-share NAV，确保费用、
-  T+1、现金和整数手仍由权威账本决定。
-- 2026-08-12：真实 `index_member_all` 探针确认 `is_new=N` 返回 0 行；本报告退化为当前 SW2021
-  行业映射，报告必须披露该分类幸存者偏差，后续可替换为有授权的历史行业主数据。
-- 2026-08-12：十年运行采用周频 NAV/benchmark 观测和 52 期年化；交易执行仍只发生在真实调仓日。
-- 2026-08-12：fresh-context 最终审查发现财务修订回灌、静态行业映射实现不一致和失败退出不重试
-  三项 High；现已改为原始财报版本、真正静态行业映射和 20 交易日退出重试，旧结果作废。
+The independent final review identified three High issues involving revised financials leaking into history, inconsistent application of the static industry mapping, and no retry after an exit failed. The fixes restrict financials to original versions, apply one static mapping and retry exits for 20 trading days. They superseded the earlier results.
 
-## Current state
+## Results and verification
 
-- 完成 2016-08-12 至 2026-08-11 的完整十年周频净值与 20 次真实半年调仓：2335 条入选记录、
-  426 只历史入选股票、
-  2145 笔成交；退出重试产生 383 次受限拒绝，期末仅余 `601989.SH` 一只连续停牌残留，占 NAV
-  0.91%。
-- 真实缓存含 1959 个请求对象：`fina_indicator=611`、`daily=446`、`adj_factor=446`、
-  `daily_basic/index_weight=20`、`stk_limit=381`，另含日历、行业和基准；selection 的 Top5、逐期
-  权重和、原始财报标识与公告截止均
-  经 DuckDB 审计通过。
-- 最终完整十年运行因扩展基准区间新增 1 次 provider 请求；无效 token 的第二进程复读为 provider
-  0；两次 request SHA
-  `55202d...2d84`、result SHA `2d4a75...9346`，报告 SHA `195931...a2de` 也完全一致。
-- 结果：总收益 81.04%，年化 6.23%，年化波动 13.64%，Sharpe 0.511，最大回撤 -27.43%；
-  沪深300价格收益 41.57%，期末现金 21.06%，交易成本 16,813.29 CNY。
+The final run produced 2,335 selection rows over 20 rebalances, 426 distinct stocks and 2,145 fills. Exit retries produced 383 rejections under trading restrictions. One residual holding, `601989.SH`, remained suspended and represented 0.91% of ending NAV. Total return was 81.04%, annualized return 6.23%, annualized volatility 13.64%, Sharpe 0.511 and maximum drawdown -27.43%. The CSI 300 price return was 41.57%. Ending cash was 21.06% of NAV and trading costs were 16,813.29 CNY.
 
-## Verification evidence
+The real cache held 1,959 request objects, including `fina_indicator=611`, `daily=446`, `adj_factor=446`, `daily_basic/index_weight=20` and `stk_limit=381`, plus calendar, industry and benchmark data. DuckDB verified the per-period Top5 and weight limits, original financial flags and announcement cutoffs. The 20 selection snapshots contained 2,335 rows with `financial_update_flag={'0'}`, zero future announcements, zero Top5 violations and zero weight-sum violations.
 
-- Red/Green：评分模块、target-weight constructor、周频/复权 helper、报告 52 期参数、原始财报
-  选择、静态行业映射、零权重退出重试及拒单汇总均由失败测试锁定后修复。
-- `TUSHARE_TOKEN=<external-file> uv run pytest -q`：142 passed，0 skipped。
-- `uv run ruff check python tests`、`uv run mypy`：通过。
-- `cargo fmt --check`、`cargo clippy --workspace --all-targets -- -D warnings`、
-  `cargo test --workspace`：通过。
-- `uv build`、`cargo package --workspace --allow-dirty --no-verify`：通过。
-- 仓库 token literal 扫描：0；外部 token 文件权限：0600。
-- 最终 20 个 selection snapshot：2335 rows、`financial_update_flag={'0'}`、未来公告 0、Top5 违规 0、
-  权重和违规 0；clean deliverable/replay 四个关键文件 SHA 逐字节一致。
+Extending the benchmark interval required one extra provider call for the final ten-year run. A fresh process using an invalid token replayed with zero calls. The four key files matched byte for byte, including request SHA `55202d...2d84`, result SHA `2d4a75...9346` and HTML SHA `195931...a2de`.
+
+Failing tests preceded fixes to scoring, target-weight construction, weekly and adjusted-price helpers, report annualization at 52 periods, original financial selection, static industry mapping, zero-target exit retries and rejection counts. The following checks were recorded.
+
+- `TUSHARE_TOKEN=<external-file> uv run pytest -q` returned 142 passed, 0 skipped.
+- `uv run ruff check python tests` and `uv run mypy` passed.
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` passed.
+- `uv build` and `cargo package --workspace --allow-dirty --no-verify` passed.
+- The repository token scan had zero matches. External token file permissions were 0600.
 
 ## Changed files
 
@@ -134,4 +92,4 @@ Tushare 数据、Rust 权威事件运行时和现有报告层生成策略报告�
 
 ## Open questions
 
-- none；本次报告的 universe/capital/date 作为可配置运行参数，不改变策略定义。
+None. The universe, capital and date range remain run parameters independent of the strategy definition.

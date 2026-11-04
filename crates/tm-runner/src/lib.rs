@@ -1,4 +1,6 @@
-//! Strict JSON process boundary for the authoritative event runtime.
+//! Saved request formats for event replay and daily snapshot backtests.
+
+pub mod snapshot;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -23,6 +25,24 @@ pub enum RunnerError {
     Execution(String),
     #[error("runner serialization failed: {0}")]
     Serialization(String),
+}
+
+/// Dispatch a saved request without changing the bytes used for event provenance.
+pub fn replay_request(input: &[u8], directory: &std::path::Path) -> Result<Vec<u8>, RunnerError> {
+    #[derive(Deserialize)]
+    struct Header {
+        schema_id: String,
+    }
+
+    let header: Header = serde_json::from_slice(input)
+        .map_err(|err| RunnerError::InvalidRequest(err.to_string()))?;
+    match header.schema_id.as_str() {
+        "trademaster.e2e-runner/v1" => run_json(input),
+        "trademaster.snapshot-run/v1" => snapshot::run_snapshot_json(input, directory),
+        id => Err(RunnerError::InvalidRequest(format!(
+            "unknown request schema: {id}"
+        ))),
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

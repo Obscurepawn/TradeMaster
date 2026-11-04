@@ -197,9 +197,7 @@ def test_real_rust_runner_round_trip_builds_reproducible_report_bundle(
         event_times=report_times,
         close_values=(Decimal(100), Decimal(101), Decimal(102)),
     )
-    client = E2ERunnerClient(
-        command=("cargo", "run", "--quiet", "-p", "tm-runner", "--bin", "tm-runner")
-    )
+    client = E2ERunnerClient()
     bundle = client.execute(
         _request(),
         output_dir=tmp_path / "run",
@@ -214,10 +212,7 @@ def test_real_rust_runner_round_trip_builds_reproducible_report_bundle(
     assert result["final_positions"] == []
     assert manifest["request_sha256"] == result["request_sha256"]
     assert bundle.report_path.read_text(encoding="utf-8").startswith("<!doctype html>")
-    verified = verify_e2e_bundle(
-        bundle.manifest_path,
-        runner_command=("cargo", "run", "--quiet", "-p", "tm-runner", "--bin", "tm-runner"),
-    )
+    verified = verify_e2e_bundle(bundle.manifest_path)
     assert verified.result_sha256 == bundle.result_sha256
 
     forged_root = tmp_path / "forged"
@@ -237,18 +232,7 @@ def test_real_rust_runner_round_trip_builds_reproducible_report_bundle(
         encoding="utf-8",
     )
     with pytest.raises(E2ERunnerError, match="Rust replay"):
-        verify_e2e_bundle(
-            forged_manifest_path,
-            runner_command=(
-                "cargo",
-                "run",
-                "--quiet",
-                "-p",
-                "tm-runner",
-                "--bin",
-                "tm-runner",
-            ),
-        )
+        verify_e2e_bundle(forged_manifest_path)
 
     second = client.execute(
         _request(),
@@ -262,6 +246,31 @@ def test_real_rust_runner_round_trip_builds_reproducible_report_bundle(
     assert bundle.report_path.read_bytes() == second.report_path.read_bytes()
 
 
+def test_bundle_replays_the_bytes_checked_against_its_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bundle = E2ERunnerClient().execute(
+        _request(),
+        output_dir=tmp_path,
+        benchmarks=(),
+        classifications={"600000.SH": ("bank", "large")},
+        snapshot_manifests=(BUY_SNAPSHOT, SELL_SNAPSHOT, MARKET_SNAPSHOT),
+    )
+    paths = {bundle.request_path, bundle.result_path, bundle.report_input_path, bundle.report_path}
+    original_read = Path.read_bytes
+
+    def replace_after_read(path: Path) -> bytes:
+        data = original_read(path)
+        if path in paths:
+            path.write_bytes(b"file replaced by another writer")
+        return data
+
+    monkeypatch.setattr(Path, "read_bytes", replace_after_read)
+    verified = verify_e2e_bundle(bundle.manifest_path)
+    assert verified.request_sha256 == bundle.request_sha256
+    assert verified.result_sha256 == bundle.result_sha256
+
+
 def test_report_exposure_uses_latest_classification_available_at_each_event(
     tmp_path: Path,
 ) -> None:
@@ -270,9 +279,7 @@ def test_report_exposure_uses_latest_classification_available_at_each_event(
         event_times=(DAY1_CLOSE, DAY2_CLOSE, DAY3_CLOSE),
         close_values=(Decimal(100), Decimal(101), Decimal(102)),
     )
-    bundle = E2ERunnerClient(
-        command=("cargo", "run", "--quiet", "-p", "tm-runner", "--bin", "tm-runner")
-    ).execute(
+    bundle = E2ERunnerClient().execute(
         _request(),
         output_dir=tmp_path / "classification-timeline",
         benchmarks=(benchmark,),
@@ -300,10 +307,7 @@ def test_report_exposure_uses_latest_classification_available_at_each_event(
     )
     assert "large" in dict(day_two["market_cap_weights"])
     assert "small" not in dict(day_two["market_cap_weights"])
-    verify_e2e_bundle(
-        bundle.manifest_path,
-        runner_command=("cargo", "run", "--quiet", "-p", "tm-runner", "--bin", "tm-runner"),
-    )
+    verify_e2e_bundle(bundle.manifest_path)
     strategy_report = bundle.manifest_path.parent / "strategy-report.md"
     strategy_summary = bundle.manifest_path.parent / "strategy-summary.json"
     strategy_report.write_text("# report\n", encoding="utf-8")
@@ -318,10 +322,7 @@ def test_report_exposure_uses_latest_classification_available_at_each_event(
     assert json.loads(bundle.manifest_path.read_text())["schema_id"] == (
         "trademaster.e2e-bundle/v3"
     )
-    verify_e2e_bundle(
-        bundle.manifest_path,
-        runner_command=("cargo", "run", "--quiet", "-p", "tm-runner", "--bin", "tm-runner"),
-    )
+    verify_e2e_bundle(bundle.manifest_path)
 
 
 def test_three_instrument_periodic_rebalance_and_exit_share_one_runtime(
@@ -439,9 +440,7 @@ def test_three_instrument_periodic_rebalance_and_exit_share_one_runtime(
         signals=tuple(signals),
     )
     report_times = (DAY1_CLOSE, DAY2_CLOSE, DAY3_CLOSE, DAY4_CLOSE, DAY5_CLOSE)
-    bundle = E2ERunnerClient(
-        command=("cargo", "run", "--quiet", "-p", "tm-runner", "--bin", "tm-runner")
-    ).execute(
+    bundle = E2ERunnerClient().execute(
         request,
         output_dir=tmp_path / "periodic",
         benchmarks=(

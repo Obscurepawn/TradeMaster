@@ -1,49 +1,51 @@
-# 基本面最强 Top10 行业 × 行业内 Top1 十年实验
+# Ten-year experiment selecting one stock in each of ten industries
 
 Status: complete
 Owner: Codex
 Updated: 2026-08-12
+Open questions: none
 
-## 目标
+## Experiment and ranking rules
 
-在已完成的真实 Tushare 十年行业基本面 Top1 回测上增加行业择优：每个半年调仓截面只保留基本面平均分最高的10个行业，再从每个行业选择原行业中性综合分最高的1只股票，全局等权，并与全行业 Top1 基线比较。
+Apply an industry filter to the existing ten-year Tushare backtest of one stock per industry. At each of the 20 semiannual rebalances, select the ten industries with the highest average fundamental scores. Within each industry, select the stock with the highest original industry-neutral score, then equally weight all selected stocks.
 
-## 评分接口与不变量
+To select a stock, winsorize and standardize the nine indicators within its industry, then apply the original Top1 weights. Those scores average near zero within each industry, so they cannot distinguish industries.
 
-- 股票选择分保持原规则：九项指标在行业内 winsorize、标准化、加权，行业内 Top1。
-- 不能直接平均上述行业中性分，因为各行业均值按构造接近0。
-- 行业选择分：对同一批合格候选，将同样九项指标改在全体候选之间 winsorize、标准化并按原权重合成全市场股票分；行业分为该行业合格股票全市场分的等权算术平均。
-- 行业按 `(-industry_mean_score, industry_id)` 稳定排序，保留前10；最终通常持有10只，全局目标等权。
-- 除行业筛选外，数据、PIT、20次半年调仓、Top1、费用、滑点、Rust交易限制、初始资金500,000 CNY和报告口径均与基线一致。
+To rank an industry, recompute the nine indicators' standardized scores across *all eligible stocks*, using the same winsorization and weights. Average the resulting fundamental scores for its members. Each stock counts once, regardless of market capitalization.
 
-## 实现任务
+Sort by `(-industry_mean_score, industry_id)` and take the first ten. The usual target portfolio is ten equally weighted stocks. Keep the all-industry Top1 baseline's data, PIT rules, costs, slippage, Rust trading constraints, starting cash of 500,000 CNY and reporting conventions.
+
+## Implementation and acceptance
 
 | Task | Owner | Status | Evidence |
 |---|---|---|---|
-| 定义 Top行业公共接口 | Codex | complete | strategy/config regression checks |
-| CLI、运行身份、产物和报告贯穿 | Codex | complete | config/selection/summary/report artifacts |
-| 真实十年 E2E 与 clean replay | Codex | complete | provider 0 + four identical hashes |
-| 与全行业 Top1 对照、门禁和 bounded review | Codex | complete | comparison + gates + bounded review PASS |
+| Define the public industry-filter option | Codex | complete | Strategy and configuration regression checks |
+| Connect the CLI, run identity, outputs and report | Codex | complete | Configuration, selections, summary and report |
+| Run ten years of real data and replay | Codex | complete | Zero provider calls and four matching hashes |
+| Compare with all-industry Top1 and run final checks | Codex | complete | Comparison, test suites and passing independent review |
 
-## 验收标准
+- [x] Validate `top_industries_by_mean_score=10`. The default `None` preserves the baseline.
+- [x] Tests confirm the market-wide means, deterministic ordering and exact equal weights.
+- [x] All 20 real selections contain ten industries, one stock per industry and an exact weight sum of one.
+- [x] Both runs use the cache without a provider call and reproduce the key hashes.
+- [x] Produce HTML, Markdown, JSON and the all-industry Top1 comparison.
+- [x] Pass the Python and Rust checks and one independent review of the specified scope.
 
-- [x] `top_industries_by_mean_score=10` 可配置、校验且默认 `None` 保持原行为。
-- [x] 回归检查证明行业按全市场基本面分均值选取、稳定处理并精确等权。
-- [x] 20个真实截面均只含10个行业、每行业1只、逐期权重和精确为1。
-- [x] 首轮和 clean replay 均 provider 0，关键产物哈希一致。
-- [x] 输出 HTML、Markdown、JSON及与全行业 Top1 的对照结论。
-- [x] Python/Rust门禁通过并完成一次范围受限 fresh review。
+## Results and verification
 
-## Decisions
+| Strategy | Total return | Annualized return | Volatility | Sharpe | Maximum drawdown |
+|---|---:|---:|---:|---:|---:|
+| Ten industries, Top1 | 54.16% | 4.50% | 17.92% | 0.335 | -40.63% |
+| All industries, Top1 | 108.39% | 7.76% | 16.69% | 0.531 | -27.64% |
 
-- “平均表现”定义为行业合格成分股的全市场九项基本面综合分均值，而非历史价格收益。
-- 行业平均不按市值加权，避免大市值股票支配行业选择。
+The industry filter reduced return and increased drawdown in this experiment. Across 20 dates and 200 selections, the audit found ten industries per date, one stock per industry, industry ranks 1–10, a weight of 0.1 per stock and an exact weight sum of one. There were zero violations.
 
-## Current state
 
-- 策略已实现并完成真实十年 E2E：总收益54.16%、年化4.50%、波动17.92%、Sharpe 0.335、最大回撤-40.63%。
-- 全行业Top1基线为总收益108.39%、年化7.76%、波动16.69%、Sharpe 0.531、最大回撤-27.64%；Top10行业筛选明显更差。
-- 20个截面共200条选择，结构校验零违规；首轮/replay均provider 0且四个关键哈希一致。
+The first real run and clean replay both made zero provider calls. Their request `a076c7d6…abbe4`, result `b9e7b6dd…c0f56`, report input `0db6376b…dbe5d` and HTML `0cbaf2fd…3f1ae` hashes matched.
+
+Python reported `144 passed`. Ruff check, mypy, Cargo fmt, Clippy and Rust workspace tests passed. The four changed Python files passed Ruff's format check. A separate repository-wide format check found 30 files with pre-existing formatting differences. They were left untouched.
+
+The independent review passed with no Critical or High issues in scope. It reproduced the scores, selections, artifact hashes, performance table and industry concentration.
 
 ## Changed files
 
@@ -56,15 +58,3 @@ Updated: 2026-08-12
 - `tests/test_industry_fundamental_top5.py`
 - `artifacts/strategies/industry-fundamental-top10-industries-top1-10year-final/`
 - `artifacts/strategies/industry-fundamental-top10-industries-top1-10year-final-replay/`
-
-## Open questions
-
-- none。
-
-## Verification evidence
-
-- 真实E2E及clean replay均provider 0；request `a076c7d6…abbe4`、result `b9e7b6dd…c0f56`、report input `0db6376b…dbe5d`、HTML `0cbaf2fd…3f1ae`逐项一致。
-- 选择审计：20期、200行；每期10行业、每行业1只、行业排名1–10、单只权重0.1、逐期权重和精确为1，零违规。
-- Python `144 passed`；Ruff check、mypy、Cargo fmt、Clippy、Rust workspace tests通过；本次4个Python改动文件的Ruff format check通过。
-- 全仓Ruff format check另显示30个既有文件的历史格式漂移；未批量修改无关文件。
-- bounded fresh-context review：PASS，限定范围无Critical/High；独立重算评分、选择、产物哈希、指标表和行业集中度均一致。

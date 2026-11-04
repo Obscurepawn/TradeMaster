@@ -291,7 +291,6 @@ def run_real_tushare_e2e(
     data_root: Path,
     output_root: Path,
     as_of: datetime,
-    runner_command: tuple[str, ...],
 ) -> RealTushareE2EOutcome:
     """Run real cross-sectional and ETF timing scenarios, then prove cache reuse."""
     config = DataConfig(
@@ -462,7 +461,7 @@ def run_real_tushare_e2e(
             cast(date, row["trade_date"]): Decimal(str(row["close"]))
             for row in index_bars.to_pylist()
         }
-        client = E2ERunnerClient(command=runner_command)
+        client = E2ERunnerClient()
         cross_bundle = client.execute(
             RunnerRequest(
                 schema_id="trademaster.e2e-runner/v1",

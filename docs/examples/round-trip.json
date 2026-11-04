@@ -1,0 +1,157 @@
+{
+  "schema_id": "trademaster.e2e-runner/v1",
+  "run_id": "single-round-trip",
+  "strategy_id": "single-timing",
+  "snapshot_id": "8240e974202de8700403d26169a2cfb5107a9a550fbd2c85c5f167cd4e5a2412",
+  "initial_cash_scaled": "200000000000",
+  "initial_time": "2025-01-01T00:00:00Z",
+  "instruments": [
+    {
+      "instrument_id": "600000.SH",
+      "asset_class": "stock",
+      "venue": "sse",
+      "currency": "CNY",
+      "buy_lot_size": 100,
+      "tick_size_scaled": "1000000",
+      "settlement": "t1"
+    }
+  ],
+  "fee_schedule": {
+    "schedule_id": "cn-a-share-v1",
+    "commission_ppm": 300,
+    "minimum_commission_scaled": "500000000",
+    "sell_stamp_duty_ppm": 500,
+    "sse_transfer_fee_ppm": 10,
+    "rounding_unit_scaled": "1000000"
+  },
+  "slippage_ppm": 1000,
+  "session_opens": [
+    "2025-01-03T01:30:00Z",
+    "2025-01-06T01:30:00Z",
+    "2025-01-07T01:30:00Z"
+  ],
+  "events": [
+    {
+      "event_time": "2025-01-02T07:00:00Z",
+      "kind": "bar_close",
+      "bars": [
+        {
+          "instrument_id": "600000.SH",
+          "open_scaled": "1000000000",
+          "high_scaled": "1000000000",
+          "low_scaled": "1000000000",
+          "close_scaled": "1000000000",
+          "volume_units": "100000",
+          "up_limit_scaled": "1200000000",
+          "down_limit_scaled": "800000000",
+          "trading_status": "tradable",
+          "status_evidence_id": "synthetic:daily-status"
+        }
+      ]
+    },
+    {
+      "event_time": "2025-01-03T01:30:00Z",
+      "kind": "settlement",
+      "bars": []
+    },
+    {
+      "event_time": "2025-01-03T01:30:00Z",
+      "kind": "session_open",
+      "bars": [
+        {
+          "instrument_id": "600000.SH",
+          "open_scaled": "1000000000",
+          "high_scaled": "1000000000",
+          "low_scaled": "1000000000",
+          "close_scaled": "1000000000",
+          "volume_units": "1",
+          "up_limit_scaled": "1200000000",
+          "down_limit_scaled": "800000000",
+          "trading_status": "tradable",
+          "status_evidence_id": "synthetic:daily-status"
+        }
+      ]
+    },
+    {
+      "event_time": "2025-01-03T07:00:00Z",
+      "kind": "bar_close",
+      "bars": [
+        {
+          "instrument_id": "600000.SH",
+          "open_scaled": "1000000000",
+          "high_scaled": "1100000000",
+          "low_scaled": "1000000000",
+          "close_scaled": "1100000000",
+          "volume_units": "100000",
+          "up_limit_scaled": "1200000000",
+          "down_limit_scaled": "800000000",
+          "trading_status": "tradable",
+          "status_evidence_id": "synthetic:daily-status"
+        }
+      ]
+    },
+    {
+      "event_time": "2025-01-06T01:30:00Z",
+      "kind": "settlement",
+      "bars": []
+    },
+    {
+      "event_time": "2025-01-06T01:30:00Z",
+      "kind": "session_open",
+      "bars": [
+        {
+          "instrument_id": "600000.SH",
+          "open_scaled": "1100000000",
+          "high_scaled": "1100000000",
+          "low_scaled": "1100000000",
+          "close_scaled": "1100000000",
+          "volume_units": "1",
+          "up_limit_scaled": "1300000000",
+          "down_limit_scaled": "900000000",
+          "trading_status": "tradable",
+          "status_evidence_id": "synthetic:daily-status"
+        }
+      ]
+    },
+    {
+      "event_time": "2025-01-06T07:00:00Z",
+      "kind": "bar_close",
+      "bars": [
+        {
+          "instrument_id": "600000.SH",
+          "open_scaled": "1100000000",
+          "high_scaled": "1100000000",
+          "low_scaled": "1100000000",
+          "close_scaled": "1100000000",
+          "volume_units": "100000",
+          "up_limit_scaled": "1300000000",
+          "down_limit_scaled": "900000000",
+          "trading_status": "tradable",
+          "status_evidence_id": "synthetic:daily-status"
+        }
+      ]
+    }
+  ],
+  "signals": [
+    {
+      "signal_id": "buy",
+      "instrument_id": "600000.SH",
+      "signal_time": "2025-01-02T07:00:00Z",
+      "eligible_execution_time": "2025-01-03T01:30:00Z",
+      "intent_type": "quantity",
+      "value_scaled": "10000000000",
+      "reason": "buy threshold",
+      "snapshot_id": "90427019a87c2e9e7ac3a6d918896ed5787021f7685da2ca42a79b2adddf32b6"
+    },
+    {
+      "signal_id": "sell",
+      "instrument_id": "600000.SH",
+      "signal_time": "2025-01-03T07:00:00Z",
+      "eligible_execution_time": "2025-01-06T01:30:00Z",
+      "intent_type": "quantity",
+      "value_scaled": "0",
+      "reason": "sell threshold",
+      "snapshot_id": "207b94851e92c4063c61455220f74dfee86376c217719ab0e19233bc0789dc77"
+    }
+  ]
+}

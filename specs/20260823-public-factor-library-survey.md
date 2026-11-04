@@ -1,95 +1,51 @@
-# 公开因子库与机构因子研究调研
+# Survey of public factor libraries and institutional research
 
-Status: done
-Owner: Codex
-Updated: 2026-08-23
+- Status: done
+- Owner: Codex
+- Updated: 2026-08-23
 
-## Goal
+## Goal and scope
 
-形成一份可独立阅读、来源可追溯的中文调研文档，系统梳理截至 2026-08-23
-公开可获得的量化因子库、机构研报因子、开源实现、因子收益数据集与商业平台因子服务，
-并给出面向 TradeMaster 的引入优先级和数据契约建议。
+The user asked which quantitative institutions publish factor libraries, with particular interest in WorldQuant Alpha101, single factors disclosed in Huatai Securities research, and Qlib Alpha158 and Alpha360. At the time, TradeMaster M2 implemented basic momentum, size and composite factors. The deliverable was a standalone Chinese-language survey of resources available on 2026-08-23, with sources, integration priorities and data-contract recommendations.
 
-## Context
+The survey distinguishes published formulas, open-source code, public factor-return series and commercial services that expose factor values under access restrictions. It covers Alpha101, Alpha191, Alpha158, Alpha360, the Huatai multifactor series, and representative Chinese and international resources. For each major library it records the publisher and maintainer, how counts are defined, market, frequency, input fields, code, license, data access and reproducibility. It addresses point-in-time (PIT) data, adjusted prices, neutralization, different versions sharing a name, and the distinction between an indicator and a tradable alpha.
 
-用户希望确认量化机构是否公开因子库，并特别要求覆盖 WorldQuant Alpha101、
-华泰证券多因子研报披露的单因子、Qlib Alpha158 与 Alpha360。现有 TradeMaster M2
-仅实现基础动量、市值和复合因子，尚无外部因子目录的系统选型依据。
+## Evidence and requirements
 
-## Scope
-
-### In scope
-
-- 区分“公开公式”“开源代码”“公开因子收益序列”“可调用但受限的商业因子值”四类供给。
-- 覆盖 Alpha101、Alpha191、Alpha158、Alpha360、华泰多因子系列及其他代表性国际/国内资源。
-- 为核心资源记录来源、维护方、数量口径、资产/市场、频率、输入字段、代码与许可证、
-  数据可得性、PIT/复权/中性化风险和复现等级。
-- 说明同名因子的版本差异、常见误称，以及“指标库不等于可交易 Alpha 库”的边界。
-- 给出 TradeMaster 分阶段接入建议，但不修改运行时代码。
-
-### Out of scope
-
-- 不全文转载受版权保护的研报或一次性抄录数百条公式。
-- 不承诺穷尽所有券商历史研报、私有模型或付费数据库。
-- 不实现、回测或比较因子收益，不采购数据权限。
-
-## Requirements and constraints
-
-- 以官方论文、官方文档、官方代码仓库和机构原始页面为优先证据；仅在原始材料不可公开访问时使用可信二手来源并明确标注。
-- 对“公开”采用分级口径，不能把只有名称、只有收益序列或需付费 API 的资源称为完全开源。
-- 结论必须说明时间截面为 2026-08-23；对持续变化的平台数量使用“页面当前声称”并附核验日期。
-- 接入建议遵守 TradeMaster 的 snapshot provenance、PIT、`known_at <= as_of`、
-  收盘信号次一可交易事件执行和精确账本边界。
+Prefer original papers, official documentation, repositories and institutional publications. Identify secondary sources where primary material is unavailable. Treat names, return series, formula disclosure and paid API values as distinct levels of access. Attribute changing platform counts to their publisher and date them. Integration recommendations retain snapshot provenance, PIT availability (`known_at <= as_of`), execution at the next eligible event after a close-derived signal, and exact accounting at the ledger boundary.
 
 ## Acceptance criteria
 
-- [x] AC-1: 独立 Markdown 至少覆盖用户点名的五类材料，并给出可点击来源。
-- [x] AC-2: 提供全景总表、核心库详解、国内券商/平台清单、学术因子数据集和排除项。
-- [x] AC-3: 每个核心库明确公式、实现、数据、许可/访问和可复现性是否公开。
-- [x] AC-4: 明确 Alpha101/Alpha191/Alpha158/Alpha360 的来源与数量口径，避免互相混同。
-- [x] AC-5: 提供适配 A 股与 TradeMaster 的分阶段优先级、最小数据集和验证清单。
-- [x] AC-6: 完成 Markdown 静态检查、引用链接提取检查和抽样可访问性核验。
+- [x] AC-1: A standalone Markdown document covers at least the five requested material categories with source links.
+- [x] AC-2: Include an overview table, major-library profiles, Chinese brokers and platforms, academic datasets, and exclusions.
+- [x] AC-3: Document which formulas, implementations, data, licenses and access conditions are public, and what a reader can reproduce.
+- [x] AC-4: Identify the sources and counting conventions for Alpha101, Alpha191, Alpha158 and Alpha360.
+- [x] AC-5: Specify phased A-share integration priorities, minimum datasets and validation checks.
+- [x] AC-6: Check the Markdown structure, extract links, and verify a sample of destinations.
 
-## Plan
+## Tasks
 
-| Task | Owner | Status | Notes |
-|---|---|---|---|
-| 确定分类和公开性分级 | Codex | done | 公式、代码、数据、因子值四层 |
-| 检索并核验一手来源 | Codex | done | 核心库及代表性扩展资源已核验 |
-| 撰写调研与接入建议 | Codex | done | 输出至 `docs/research/` |
-| 静态与链接验证 | Codex | done | Pandoc、结构、链接和数量口径均已核验 |
+| Task | Owner | Status | Evidence |
+| --- | --- | --- | --- |
+| Classify resources and public access | Codex | done | Four layers covering formulas, code, data and factor values. |
+| Locate and verify primary sources | Codex | done | Verified the principal libraries and representative related resources. |
+| Write the survey and integration recommendations | Codex | done | Output under `docs/research/`. |
+| Verify structure, links and counts | Codex | done | Pandoc, link checks and counting conventions verified. |
 
-## Decisions
+## Decisions on 2026-08-23
 
-- 2026-08-23: 将“因子库”按定义/代码/数据/服务分层，避免用单一数量排行榜误导选型。
-- 2026-08-23: 文档放在 `docs/research/`，仅作为研究证据，不进入运行时依赖。
-- 2026-08-23: 华泰 2019 年海量技术因子报告视为 WorldQuant Alpha101 的 A 股复验，
-  不作为独立的 101 个因子重复计数。
-- 2026-08-23: 纳入 2026-08-12 新上线的 Tushare 202 因子库，但按付费因子值服务
-  而非开源实现归类；其接口目前缺少版本和 `known_at` 字段，正式 PIT 运行前需另行治理。
+- Classify resources by definition, code, data and service. A single ranking by factor count obscures those differences.
+- Keep the survey in `docs/research/` as research evidence separate from runtime dependencies.
+- Count Huatai's 2019 large-scale technical-factor report as an A-share replication of WorldQuant Alpha101. Counting its 101 factors again would overstate the number of distinct definitions.
+- Include the Tushare 202-factor library launched on 2026-08-12 as a paid factor-value service. Its API at the survey date lacked versions and `known_at`. Formal PIT use requires a separate policy for recording them.
 
-## Current state
+## Findings and evidence
 
-### Completed
+The review covered repository rules, M2 boundaries, and the working tree. Public sources included WorldQuant, Microsoft Qlib, Guotai Junan, Huatai Securities, Tushare, DolphinDB, Peking University's China Anomalies and Factors, Open Source Asset Pricing, Global Factor Data, Fama/French, AQR, global-q and major commercial platforms.
 
-- 已读取仓库规范、M2 因子边界与当前工作树状态。
-- 已核验 WorldQuant、Microsoft Qlib、国泰君安、华泰证券、Tushare、DolphinDB、
-  北大 China Anomalies and Factors、Open Source Asset Pricing、Global Factor Data、
-  Fama/French、AQR、global-q 及主要商业平台的公开材料。
-- 已从官方源码确认 Alpha158 的 `9 + 4 + 29×5 = 158` 与 Alpha360 的 `6×60 = 360`
-  数量口径，并记录当前 Qlib HEAD `79633dd9506ea689e5400dea0197717b5b3d74b7`。
-- 已完成 1,110 行独立中文调研，覆盖公开性分级、核心库、华泰 13 篇、A 股学术基准、
-  国内外商业平台、TradeMaster 数据覆盖、接入路线、验证和许可边界。
-- 已审计并修正 FactSet 当前数量口径和 MyTT 许可表述；华泰历史分位数保留
-  `reported_count=89` 与图表可枚举 `86` 的差异，不静默补数。
+At Qlib HEAD `79633dd9506ea689e5400dea0197717b5b3d74b7`, upstream code gave Alpha158 as `9 + 4 + 29×5 = 158` and Alpha360 as `6×60 = 360`. The 1,110-line Chinese survey includes 13 Huatai reports, Chinese academic benchmarks, domestic and international platforms, TradeMaster coverage, licensing, integration and validation. The review corrected the FactSet count and MyTT licensing language. For the Huatai historical-percentile analysis it retains both `reported_count=89` and the 86 combinations identifiable in the published chart.
 
-### In progress
-
-- none
-
-### Blocked
-
-- none
+No work remained in progress or blocked.
 
 ## Changed files
 
@@ -99,25 +55,15 @@ Updated: 2026-08-23
 
 ## Verification
 
-- `pandoc --from=gfm --to=html docs/research/public-factor-library-survey.md -o /dev/null`：PASS。
-- 静态结构：1,110 行、4,347 words、68,413 bytes、4 个成对代码围栏、118 个 Markdown
-  链接、67 个唯一外部 URL、2 个本地链接；无 TODO、占位符或冲突标记。
-- 外链实测：64 个直接 2xx，3 个由站点返回 403/466（DOI、Quantpedia、S&P Global），
-  0 个失败/404；北大和 JKP 在本机证书链回退后为 200。
-- 数量断言：Alpha158 滚动族 29、Alpha360 六组 60 日循环、WQ 信息依赖项 19；
-  Tushare 202、PKU 469、global-q 199、华泰汇总 53、华泰历史分位数可见组合 86 均自洽。
-- 远端 HEAD 复核：Qlib `79633dd...`、DolphinDBModules `43ace2c...`、
-  OpenSourceAP `8db8924...`、JKP `6fb206b...` 与文档记录一致。
-- 文档 SHA-256：`884c5f961ea256862b938c94373f88665bc58dbed548173c9d424d5a7eabecff`。
-- 本次仅新增研究文档和规格，没有运行代码测试或回测；验证不声称任何因子当前盈利。
+- `pandoc --from=gfm --to=html docs/research/public-factor-library-survey.md -o /dev/null` passed.
+- The survey contained 1,110 lines, 4,347 words, 68,413 bytes, four matched code fences, 118 Markdown links, 67 unique external URLs and two local links. The scan found no outstanding TODOs, placeholders or conflict markers.
+- Of the external URLs, 64 returned 2xx directly. Three sites (DOI, Quantpedia and S&P Global) returned 403/466 to automated requests but remained discoverable via search. The audit recorded zero failed or 404 destinations. The Peking University and JKP links returned 200 after a local certificate-chain fallback.
+- Count checks covered the 29 rolling Alpha158 families, Alpha360's six 60-day loops, 19 WorldQuant information dependencies, Tushare 202, PKU 469, global-q 199, Huatai's aggregate 53 and its 86 visible historical-percentile combinations.
+- Remote HEADs matched the survey for Qlib `79633dd...`, DolphinDBModules `43ace2c...`, OpenSourceAP `8db8924...` and JKP `6fb206b...`.
+- Survey SHA-256: `884c5f961ea256862b938c94373f88665bc58dbed548173c9d424d5a7eabecff`. This deliverable comprised the survey and specification. No runtime tests, backtests or current profitability estimates were produced.
 
-## Risks and open questions
+## Source limits and next step
 
-- 前四篇华泰报告没有稳定机构原始直链，文档明确将第三方目录降级为导航证据；其因子名由
-  后续华泰官方 PDF 回顾表交叉核验。
-- 平台因子数量、接口权限、许可证和 URL 会变化；所有动态口径都绑定 2026-08-23 检索日。
-- 3 个商业/出版站点拒绝自动化链接请求，但网页由检索工具可发现；未将其误报为 404。
+There were no stable institutional direct links for Huatai's first four reports. The survey used a third-party index to locate them and checked the factor names against later official Huatai PDF review tables. Platform counts, API permissions, URLs and licenses are recorded as observed on 2026-08-23.
 
-## Next step
-
-本调研已完成。若决定实现某一批因子，应新建行为规格并从 P0 算子语义与数据单位契约开始。
+A future implementation should start a separate behavioral specification with the P0 operator definitions and data-unit contracts.

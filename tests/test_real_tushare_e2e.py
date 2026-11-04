@@ -57,15 +57,6 @@ def test_real_tushare_cross_sectional_and_etf_full_chain(tmp_path: Path) -> None
         data_root=tmp_path / "data",
         output_root=tmp_path / "artifacts",
         as_of=datetime(2026, 8, 11, 12, tzinfo=UTC),
-        runner_command=(
-            "cargo",
-            "run",
-            "--quiet",
-            "-p",
-            "tm-runner",
-            "--bin",
-            "tm-runner",
-        ),
     )
 
     cross = json.loads(outcome.cross_sectional.result_path.read_text(encoding="utf-8"))

@@ -1,8 +1,6 @@
-# TradeMaster 因子管理
+# TradeMaster factor management
 
-## 1. 边界
-
-Python负责因子定义、计算、物化、评估和信号；Rust只消费最终精确信号并负责市场规则、执行和账本。
+Python defines, computes, stores and evaluates factors and generates signals. Rust receives exact signals and handles market rules, execution and accounting.
 
 ```text
 PIT source snapshot
@@ -15,26 +13,13 @@ PIT source snapshot
   -> Rust runtime
 ```
 
-因子值的权威存储是Parquet。DuckDB只提供definition、materialization和evaluation的发现索引。
-公开因子目录的权威存储是内容寻址JSON；它的DuckDB同样只用于发现。candidate入库不代表
-可以执行，只有映射到`FactorDefinition`的记录才能进入物化链路。
+Parquet stores factor values. DuckDB indexes definitions, materializations and evaluations. The public factor library stores its records as content-addressed JSON and uses a separate DuckDB catalog for discovery. Only candidates linked to a `FactorDefinition` can produce values.
 
-## 2. 稳定身份
+## Factor identity and storage
 
-`FactorDefinition`包含：
+A `FactorDefinition` includes `factor_id/version`, typed dataset and factor dependencies, canonical parameter JSON and its SHA-256 hash, and the SHA-256 of the implementation module's source. It records the lookback, frequency, cross-sectional rules, units and direction. The `definition_sha256` covers all these fields. An ID/version identifies one definition. Increment the version when the implementation or parameters change to preserve prior results.
 
-- `factor_id/version`；
-- typed dataset/factor dependencies；
-- 参数的规范化JSON与SHA-256；
-- 实现模块源码SHA-256；
-- lookback、频率、截面语义、单位和方向；
-- 覆盖上述内容的`definition_sha256`。
-
-同一个`factor_id/version`不能对应不同definition。实现或参数发生变化时必须升级version，不能静默覆盖历史结果。
-
-## 3. 存储布局
-
-默认策略数据根下的因子目录为：
+The default strategy data root contains the following factor files.
 
 ```text
 factors/
@@ -51,49 +36,37 @@ factors/
   evaluations/<evaluation_id>/
 ```
 
-`FactorMaterialization`绑定definition、代码/参数hash、输入snapshot及其对象集合、精确输入Arrow表hash、universe/range、父因子materialization和输出Parquet。缓存命中时会重新读取并校验文件hash、Schema、行数和metadata。
+A `FactorMaterialization` records how to reproduce one result. It identifies the factor definition, its code and parameter hashes, and any parent materializations. For the data, it records the snapshot and source objects, the exact Arrow input table hash, universe and date range. It points to the output Parquet file. On a cache hit, the reader verifies that file's hash, schema, row count and metadata.
 
-## 4. 基本面因子
+## Fundamental and public factors
 
-基本面策略suite注册11个definitions：
+The fundamental strategy registers 11 definitions.
 
-- 价值：`earnings_yield`、`book_yield`、`dividend_yield`；
-- 质量：`roe`、`gross_margin`、`ocf_to_revenue`；
-- 成长：`sales_growth`、`profit_growth`；
-- 安全：`debt_safety`；
-- 复合：`fundamental.composite.industry_relative`、`fundamental.composite.global`。
+| Group | Factors |
+|---|---|
+| Value | `earnings_yield`, `book_yield`, `dividend_yield` |
+| Quality | `roe`, `gross_margin`, `ocf_to_revenue` |
+| Growth | `sales_growth`, `profit_growth` |
+| Safety | `debt_safety` |
+| Composites | `fundamental.composite.industry_relative`, `fundamental.composite.global` |
 
-复合因子严格按事件时间隔离截面；先以PE/PB必需、至少5/9项有效确定eligible universe，再在eligible股票中对原始值做5%/95% winsorize和总体z-score。普通缺失项贡献中性0，固定权重不按可用项重新分配。
+Composite factors process each event time separately. Require PE and PB and at least five valid indicators out of nine before fitting the cross-section. Within the eligible universe, winsorize the raw values at 5%/95% and compute population z-scores. A missing optional indicator contributes zero. The other indicators keep their original weights.
 
-公共因子suite另注册11个definitions：一条华泰Size和十条低歧义GTJA价量公式。GTJA首批
-definition直接绑定raw OHLC、`adj_factor`和后复权计算公式，并逐条登记价格差/比例/百分数
-单位。CLI的
-统一managed registry因此当前列出22条；既有基本面策略bundle仍只绑定其实际使用的11条，
-不会因为目录扩展改变历史artifact identity。完整460条候选及其数据分层见
-[`public-factor-library.md`](public-factor-library.md)。
+The public suite adds 11 definitions covering Huatai Size and ten reviewed GTJA price/volume formulas. Each GTJA definition specifies raw OHLC, `adj_factor` and the HFQ (back-adjusted price) calculation. Units distinguish price differences, ratios and percentages. The CLI lists 22 managed definitions. Existing fundamental strategy bundles reference only the 11 they used, so extending the catalog leaves their artifact IDs intact. The public library describes all 460 candidates and their data requirements. [`public-factor-library.md`](public-factor-library.md)
 
-## 5. 评估
+## Evaluation
 
-`FactorEvaluator`要求forward-return表逐行携带factor event、entry time、exit time、alignment和
-label snapshot ID；另以有序eligible-entry日历证明entry确实是factor event之后的下一可执行事件。
-标签Arrow表本身也绑定独立label snapshot。相同标签不能只改一个字符串就在open/close口径间复用。
-结果包括：
+`FactorEvaluator` requires every forward-return row to identify its factor event, entry time, exit time, alignment rule and label snapshot ID. An ordered calendar of eligible entries verifies that entry occurs at the next eligible execution event after the factor observation. The Arrow label table has its own snapshot. Switching between open- and close-based entry conventions requires matching label data.
 
-- coverage；
-- 每期Pearson IC和Spearman RankIC；
-- IC均值、标准差、ICIR、正IC比例；
-- 分位数组收益和Top-Bottom spread；
-- Top quantile turnover。
+The evaluator reports coverage, Pearson IC and Spearman RankIC per period, IC mean and standard deviation, ICIR, the proportion of positive IC observations, returns by quantile, the top-minus-bottom return spread, and top-quantile turnover.
 
-M9的全A evaluation v2在此基础上增加逐horizon coverage/invalid reason、HAC、definition方向、
-非重叠spread统计、Size中性RankIC、PIT市值tercile暴露、行业内RankIC、CNY容量proxy及逐event
-因子相关。Quantile在未来label join前冻结；direction与真实最小观察session间隔进入config hash。
+M9's all-A-share evaluation shows how many observations enter each horizon and why others drop out. It reports HAC statistics and spreads over non-overlapping periods. To examine exposures, it computes size-neutral and within-industry RankIC, groups stocks by their market-cap tercile at the time, and reports capacity in CNY and factor correlations at each event.
 
-评估的forward returns、IC、quantiles、summary和manifest均可持久化，并登记到同一factor catalog。
-manifest同时绑定label snapshot和eligible-entry日历hash。标签数据只能进入evaluation namespace，
-不能流回signal。
+Assign stocks to quantiles before joining their future returns. The configuration hash includes the direction specified by the factor definition and the actual minimum number of trading sessions between observations.
 
-## 6. CLI
+The evaluator can save and catalog forward returns, IC, quantiles, the summary and the manifest. The manifest records the label snapshot and the eligible-entry calendar hash. Keep labels within evaluation so signal generation cannot read future returns.
+
+## CLI
 
 ```bash
 tm-factor list
@@ -112,26 +85,14 @@ tm-factor --root <factor-root> library-list --dependency daily_bars.close
 tm-factor --root <factor-root> library-describe gtja191.alpha014
 ```
 
-正式命令始终要求明确version，不支持隐式`latest`。
+Formal commands require an explicit version. They do not resolve an implicit `latest`.
 
-## 7. 正式E2E
+## End-to-end verification
 
-基本面策略bundle使用`trademaster.e2e-bundle/v3`，同时绑定：
+The fundamental strategy's `trademaster.e2e-bundle/v3` identifies the candidate input snapshots and Parquet files, 11 factor definitions, 220 materializations over 20 periods and their Parquet files, selection snapshots, signals, the Rust request and result, report inputs, HTML, strategy summary and Markdown report.
 
-- candidate input snapshots和Parquet；
-- 11个factor definitions；
-- 20期共220个materializations及其Parquet；
-- selection snapshots、signals、Rust request/result；
-- report input、HTML、strategy summary和Markdown。
+`index_member_all` supplies some `in_date/out_date` membership intervals. The M9 all-A-share audit still found 15,013 historical interval gaps. A formal strategy checks membership on the signal date and stops if it cannot establish it. The `static_latest_experiment` policy has a separate strategy identity because applying today's classifications to past dates does not establish PIT membership. The old M7 returns also used continuous QFQ prices to approximate corporate actions. Those artifacts are retained for diagnostics.
 
-`index_member_all`可以提供部分`in_date/out_date`区间，但M9全A审计仍发现15,013个历史interval
-gap。正式策略默认按信号日解析区间并在缺口处fail closed；`static_latest_experiment`拥有独立
-策略identity，不能包装成历史PIT分类。旧M7收益artifact另受连续QFQ公司行动会计近似影响，
-只保留为诊断证据。
+## Twenty-year all-A-share evaluation
 
-## 8. 二十年全A测评
-
-通用因子研究不再复用策略选股后的`selected_union`价格cache。M9提供独立的可恢复下载计划、
-动态历史股票池、稠密session面板、DuckDB流式evaluation和因子专用报告，详见
-[`full-a-factor-research.md`](full-a-factor-research.md)。`tm-factor`继续管理低层definition、
-materialization与evaluation v1；`tm-research-full-a`负责长周期全市场编排。
+M9 plans resumable downloads for the historical stock universe, builds a dense session panel, streams evaluation through DuckDB and writes factor research reports. Its price universe is independent of a strategy's post-selection `selected_union` cache. `tm-factor` manages individual definitions, materializations and v1 evaluation. `tm-research-full-a` orchestrates long-horizon, market-wide studies. [`full-a-factor-research.md`](full-a-factor-research.md)

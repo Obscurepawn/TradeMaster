@@ -6,16 +6,17 @@ Updated: 2026-08-11
 
 ## Goal
 
-Build an interface-first A-share research and daily event backtesting framework
-with Python research/data/reporting, a Rust execution kernel, reproducible
-Parquet/DuckDB snapshots, auditable A-share rules, and self-contained reports.
+Build a daily A-share research and backtesting framework. Python handles research,
+data collection, and reporting. Rust handles execution and accounting. The inputs
+are reproducible Parquet/DuckDB data snapshots, the applied trading rules can be
+checked after a run, and each report can be read on its own.
 
 ## Context
 
 The tracked repository started with only `.gitignore`. Nine ignored research
-repositories and source-backed comparison documents are design evidence only.
-The user approved the greenfield architecture and requested TDD plus a
-fresh-context review after every milestone.
+repositories and the comparison documents provided design references. The user
+approved building from scratch with test-driven development (TDD) and an
+independent review after each milestone.
 
 ## Scope
 
@@ -38,37 +39,37 @@ fresh-context review after every milestone.
 
 ## Requirements and constraints
 
-- Interfaces and Arrow schemas are frozen before behavior implementation.
+- Define the public interfaces and Arrow schemas before implementing their behavior.
 - Signals computed after close execute no earlier than the next session open.
-- Suspended instruments cannot trade; limit-up buys and limit-down sells block.
-- A-share buys use 100-share lots and acquired stock is sellable from T+1.
+- Suspension blocks trading in both directions. The daily model rejects buys at the upper limit and sells at the lower limit.
+- A-share purchases use 100-share lots. Stock bought today becomes sellable at T+1.
 - Unfilled daily orders expire and remain auditable.
-- Formal runs fail closed; provider fallbacks and benchmark proxies are explicit.
+- A backtest stops if its required inputs are missing or fail validation. Record any provider fallback or substitute benchmark explicitly.
 - Tushare credentials come only from `TUSHARE_TOKEN`.
-- Each milestone uses proportional TDD. M2-M5 each receive one bounded fresh-context
-  review; after M6 E2E succeeds, the complete chain receives one global high-intensity review.
+- Use tests appropriate to each milestone. M2–M5 each receive one independent review.
+  After M6 end-to-end testing succeeds, review the full workflow once in depth.
 
 ## Acceptance criteria
 
-- [x] AC-1: Public Python/Rust/Arrow contracts compile and share golden schemas.
+- [x] AC-1: The public Python/Rust interfaces compile and agree with the shared Arrow reference schemas.
 - [x] AC-2: Cache-first data and PIT snapshot behavior pass integration tests.
 - [x] AC-3: Factors/signals are cutoff-invariant and future labels are isolated.
 - [x] AC-4: A-share rules, exact costs, T+1 lots, and atomic ledger pass tests.
 - [x] AC-5: Cross-sectional and event strategies share the Rust event runtime.
 - [x] AC-6: Reports reproduce hand-calculated metrics and multiple benchmarks.
-- [x] AC-7: Synthetic E2E and permitted Tushare E2E complete with identity-bound bundles.
-- [x] AC-8: Each milestone has closed fresh-context review findings.
+- [x] AC-7: Synthetic E2E and permitted Tushare E2E complete with bundles that identify their inputs and results.
+- [x] AC-8: Review findings for each milestone have been addressed.
 
 ## Plan
 
 | Task | Owner | Status | Notes |
 |---|---|---|---|
-| M0 interfaces, specs, AGENTS, diagrams | Codex | done | Fresh review PASS; no Critical/High/Medium |
+| M0 interfaces, specs, AGENTS, diagrams | Codex | done | Independent review PASS; no Critical/High/Medium |
 | M1 data foundation | Codex | done | 107 Python/26 Rust; real Tushare; known review findings closed |
-| M2 factor and signal layer | Codex | done | 122 Python; real Tushare; bounded review closed |
-| M3 Rust rules and ledger | Codex | done | 34 Rust tests; A-share constraints; bounded review closed |
-| M4 unified event runtime | Codex | done | 39 Rust tests; unified chain; bounded review closed |
-| M5 metrics and report | Codex | done | 128 Python; standalone HTML; bounded review closed once |
+| M2 factor and signal layer | Codex | done | 122 Python; real Tushare; focused review closed |
+| M3 Rust rules and ledger | Codex | done | 34 Rust tests; A-share constraints; focused review closed |
+| M4 unified event runtime | Codex | done | 39 Rust tests; unified chain; focused review closed |
+| M5 metrics and report | Codex | done | 128 Python; standalone HTML; focused review closed once |
 | M6 E2E and performance | Codex | done | Real full-chain E2E/cache replay; one global review closed |
 
 ## Decisions
@@ -77,11 +78,11 @@ fresh-context review after every milestone.
 - 2026-08-10: Vectorize factors/signals only; all formal backtests use events.
 - 2026-08-10: V1 is daily and A-share-first; overseas markets are interfaces.
 - 2026-08-10: Unfilled orders expire daily; no automatic cross-day retries.
-- 2026-08-10: Every milestone requires a fresh-context independent review.
-- 2026-08-11: To avoid recursive review churn, M2-M5 use one bounded review each; M6 E2E
-  is followed by one global high-intensity review.
-- 2026-08-10: ETF identity is authoritative immutable data-path configuration shared by
-  provider, raw replay, object publication, and recovery; no adapter-local default may diverge.
+- 2026-08-10: Each milestone requires an independent review.
+- 2026-08-11: Limit M2–M5 to one focused review per milestone. Conduct one
+  comprehensive system review after the M6 end-to-end tests pass.
+- 2026-08-10: The configured ETF set is part of the immutable data-path configuration.
+  The provider, raw replay, object publication, and recovery must all use that same set.
 - 2026-08-10: `index_weight` is a dated composition snapshot in V1. Its canonical interval is
   the observed date only and its availability is provider ingestion time; unobserved removal or
   announcement dates are never inferred.
@@ -90,54 +91,65 @@ fresh-context review after every milestone.
 
 ### Completed
 
-- Architecture and product decisions approved in planning.
-- Nine candidate indexes and source-backed research were checked as navigation.
+- Planning approved the architecture and product scope. The team checked the indexes of
+  nine candidate projects and used the research notes to locate relevant implementations.
 - M0 Python/Rust public interfaces and the shared artifact schema are implemented.
 - M0 architecture document and editable SVG passed structural and visual review.
 - The first M0 review's 6 high and 4 medium findings have implementation fixes and
   regression tests. Its first re-review closed 5 and kept 5 open.
-- A second fresh review found 2 critical, 7 high, 3 medium, and 1 low interface gaps;
-  its critical findings proved the validator/executor and ledger traits unusable without
-  side channels. The public contracts were redesigned and re-tested rather than waived.
-- The next closure round found time-travel/duplicate-order, event-phase, no-op ledger,
-  coverage-proof, shared run-manifest, package, and overflow gaps. Each was addressed in
-  another Red/Green cycle; no finding was waived based only on green unit tests.
-- The latest gate review found one critical cross-language `RunManifest` wire mismatch and
-  five high findings around coverage evidence, frozen strategy views, sellable-lot state,
-  ledger hash binding, and whole-run lifecycle identity. Green 6 closes these with one
-  canonical fixture, checked views/state transitions, and validators in both languages.
-- The Green 6 fresh review rejected self-reported manifest objects, weak object coverage,
-  table/portfolio time gaps, hash-only ledger effects, and missing cross-table equalities.
-  Green 7 adds actual Parquet verification, object-bound coverage, frozen portfolio state,
-  replay-checked ledger cash/lots, and signal/order/sequence/ledger/lot joins.
-- The Green 7 fresh review exposed unreadable Rust validator/ledger inputs, permissive wire
-  coercion, session gaps, PIT tables without real cutoffs, and completed runs without an
-  account state chain. Green 8 adds the missing getters/seams and an eleventh immutable
-  `account_states` artifact whose before/after hashes chain every executed order transition.
-- The Green 8 review found that state-chain strings were not yet recomputed from portfolio
-  artifacts and Rust still accepted separately supplied bytes/rows. Green 9 defines a shared
-  canonical account-state hash and makes Rust decode the actual Parquet bytes it hashes.
+- A second independent review found 2 critical, 7 high, 3 medium, and 1 low interface gaps.
+  External implementations could not validate orders, execute them, or update the ledger
+  with the data those traits exposed. The team revised the interfaces and retested them.
+- The next review identified backward timestamps and duplicate orders, unclear event
+  phases, and errors in no-op ledger updates, data coverage checks, the shared run
+  manifest, packaging, and overflow handling. Each issue got a failing test and a fix
+  even though the existing unit tests passed.
+- A subsequent review found one critical difference in how Python and Rust serialized
+  `RunManifest`. The five high issues concerned proof of data coverage, what a strategy
+  could read at a given time, which lots it could sell, whether ledger hashes matched
+  accounts, and whether records across the run referred to the same orders and events.
+  Green 6 used a shared test fixture and added checks for views and account changes in
+  both languages.
+- The Green 6 reviewer found that a manifest could claim files it had not checked,
+  claimed coverage could exceed what a file contained, and tables and portfolios could
+  disagree on time. Ledger effects supplied only hashes, and related rows in different
+  tables could disagree. Green 7 verified the actual Parquet files and their coverage,
+  checked portfolios as of each event, replayed cash and lot changes, and joined signals,
+  orders, event sequences, ledger entries, and lots to verify their references.
+- In the Green 7 review, external Rust validators and ledgers could not read all their
+  inputs. The decoder accepted invalid representations, session coverage could have gaps,
+  PIT tables did not enforce their cutoffs, and a run could finish without linking its
+  account updates. Green 8 provided the missing accessors and added an eleventh stored
+  table, `account_states`. It records the hashes before and after each executed order.
+- The Green 8 review found that the verifier trusted the recorded hashes instead of
+  recomputing them from the portfolio tables. Rust also accepted rows supplied separately
+  from their serialized bytes. Green 9 defined a shared account-state hash and
+  made Rust decode the actual Parquet bytes it hashes.
 - The Green 10 review found that derived Rust deserialization bypassed `InstrumentSpec`
   validation and that set-based chronology checks hid time reversal inside one event. Green 11
   routes deserialization through checked construction and validates transition time in stored
   order.
-- M0 fresh-context final review and focused follow-up passed with no remaining
+- The final independent M0 review and focused follow-up passed with no remaining
   Critical/High/Medium findings. Its only two non-blocking findings were closed by a checked-in
   Rust backward-transition regression test and corrected eleven-table diagnostics.
-- M6 把真实 Tushare raw/staging/canonical、DuckDB/PIT snapshot、复权因子/信号、Rust 事件运行时、
-  权威账户轨迹和 standalone HTML 连为同一条可复读链路；同时加入三标的周期换仓/退出 synthetic
-  E2E。约定的一次最终全局 review 的 1 Critical/4 High/2 Medium 均集中关闭，未启动递归 review。
-- 最终新鲜门禁为 Python 132 passed（真实 credential case 未 skip）、Rust 41 tests，加上
-  Ruff、strict mypy、fmt、Clippy、doc-tests、wheel/sdist 与 Rust package 隔离验证。真实持久化
-  replay 在新进程中 provider 调用为 0 -> 0，request/result identity 完全复现。
+- M6 ran real Tushare data through raw, staging, and canonical Parquet, a DuckDB/PIT
+  data snapshot, adjusted-price factors and signals, Rust execution and account records,
+  and standalone HTML. It also added a three-instrument synthetic end-to-end test for
+  periodic rebalancing and exits. The single final system review raised 1 Critical,
+  4 High, and 2 Medium findings. All were closed together without another review cycle.
+- Final checks passed for 132 Python tests (including the real credential-dependent case),
+  41 Rust tests, Ruff, strict mypy, formatting, Clippy, doc-tests, wheel/sdist, and
+  isolated Rust package checks. Replaying the saved real run in a new process made
+  0 provider calls on both passes (0 -> 0) and reproduced the request and result identities.
 
 ### In progress
 
-- none。
+- None.
 
 ### Blocked
 
-- none；真实 Tushare token 由仓库外 `0600` 文件仅向单个测试进程注入。
+- None. A mode-`0600` file outside the repository supplied the real Tushare token
+  only to the individual test process.
 
 ## Changed files
 
@@ -147,14 +159,16 @@ fresh-context review after every milestone.
 - Guidance/docs: `crates/**/AGENTS.md`, `python/AGENTS.md`, `tests/AGENTS.md`,
   `docs/architecture/`, `specs/`.
 
-## Verification
+## Historical verification record
+
+The counts and outstanding checks below describe each stage when it was recorded.
 
 - Red 1: `PYTHONPATH=python pytest -q tests/test_public_interfaces.py` failed because
   `trademaster`/public protocols did not exist.
 - Red 1: `cargo test -p tm-core --test public_contract` and
   `cargo test -p tm-engine --test public_traits` failed on the missing public types/traits.
 - Green 1: the same focused Python and Rust contract tests passed.
-- Red 2: shared-schema tests failed because the versioned golden and Rust embedded
+- Red 2: shared-schema tests failed because the versioned reference schema and embedded Rust
   constant did not exist.
 - Green 2: Python and Rust shared-schema tests passed after adding
   `trademaster.run-artifacts/v1`.
@@ -164,17 +178,17 @@ fresh-context review after every milestone.
 - Green 3: added UTC/range/value validation, typed content-addressed snapshot objects,
   nine lifecycle schemas, exact `i128` fixed values, stable wire enums, immutable runtime
   views, strict `ExecutionBatch`, and Rust-to-Arrow `RecordBatch` materialization.
-- Rust gate: format check, Clippy `-D warnings`, 9 workspace tests and doc-tests passed.
-- Python gate: 6 tests passed; Ruff and strict mypy passed in the project uv environment;
+- Rust checks: format check, Clippy `-D warnings`, 9 workspace tests and doc-tests passed.
+- Python checks: 6 tests passed; Ruff and strict mypy passed in the project uv environment;
   source distribution and wheel built successfully.
 - Config/schema parsing and `git diff --check` passed.
-- SVG gate: structure/rsvg validation passed; a 4000px full render was visually inspected.
+- SVG checks: structure/rsvg validation passed; a 4000px full render was visually inspected.
   Data now enters the factor DAG and signals enter the event runtime before validation/ledger.
-- Fresh review 1: no critical; 6 high and 4 medium findings. M0 was correctly kept open.
+- Independent review 1: no critical; 6 high and 4 medium findings. M0 was correctly kept open.
 - Re-review 1: 5 findings closed; lifecycle, shared enum, manifest identity, ledger
   semantics, and their behavior tests remained open, so M0 stayed open.
-- Fresh review 2: found public orders unreadable to external validator/execution
-  implementations and ledger executions missing authoritative instrument/side context,
+- Independent review 2: found public orders unreadable to external validator/execution
+  implementations and ledger executions without a reliable instrument and side,
   plus deterministic replay, lot snapshot, PIT cutoff, value-domain and packaging gaps.
 - Red 4: new tests failed to compile because `OrderIntent` lacked getters,
   `OrderExecution` lacked accepted-order context and checked outcomes, and ledger lacked
@@ -212,8 +226,9 @@ fresh-context review after every milestone.
   before/after snapshots. Completed-run checks preserve signal instrument/eligibility,
   referenced sequences, ledger sources, and per-event position/lot T+1 identities.
 - M1 now has an executable data-foundation spec covering directories, DuckDB catalog columns,
-  coverage ownership, Red/Green integration cases and completion gates; the diagram shows the
-  snapshot provenance chain, eleven-table verifier and overseas extension seams.
+  responsibility for coverage, failing/passing integration cases, and acceptance checks.
+  The diagram traces snapshot provenance, verification of the eleven tables, and
+  interfaces for adding overseas markets.
 - Green 8: external Rust implementations can read every market/portfolio/fill input required
   by rules and ledger code; validation views bind portfolio and market time. Python manifest
   parsing is strict about lexical UTC, microseconds, JSON integer row counts and unknown fields.
@@ -223,8 +238,8 @@ fresh-context review after every milestone.
   fill-posting event/source relations, NAV per fill event, one account transition per executed
   order and an unbroken state-hash chain. Rust writer verification hashes supplied serialized
   bytes rather than trusting a digest map. Calendar, fee and FX provider traits are object-safe
-  market-extension seams. M1 further freezes canonical datasets, keys, coverage hashing,
-  atomic publish/recovery and task-level gates.
+  interfaces for adding markets. M1 further specifies canonical datasets, keys, coverage
+  hashing, atomic publication and recovery, and checks for each task.
 - Green 9: account state identity is the SHA-256 of the same ordered microsecond/scaled-integer
   NAV/positions/lots payload in Rust and Python; every event's final transition hash must equal
   the recomputed artifact state, NAV must balance, and fill event time is globally monotonic.
@@ -245,70 +260,70 @@ fresh-context review after every milestone.
 - Green 11: `InstrumentSpec` has a custom strict deserializer delegating to `try_new()`; Python
   and Rust validate account transition time monotonically in persisted transition order. Both
   adversarial cases now have regression tests.
-- Current gates: Rust fmt/Clippy and 26 tests pass;
+- Checks at that stage: Rust fmt/Clippy and 26 tests pass;
   Python Ruff/strict mypy (including tests) and 15 tests pass; wheel/sdist build and an
   isolated wheel import sees `py.typed` plus both schemas; `tm-core` package verifies and
   Cargo packages the whole workspace; JSON/SVG and `git diff --check` pass.
-- M0 final review: fresh-context reviewer independently reproduced closure of both Green 10
+- M0 final review: independent reviewer reproduced the fixes of both Green 10
   counterexamples, then re-reviewed its two non-blocking findings after they were fixed. Final
   result: PASS with no Critical, High, or Medium finding.
-- M1.1: configurable safe data/log roots store only the Tushare token variable name; the frozen
-  ten-dataset registry owns per-dataset identity, partition and coverage-key rules; request
-  normalization is deterministic and rejects unknown fields. Focused and full Python gates pass.
+- M1.1: configurable safe data/log roots store only the Tushare token variable name; the
+  ten-dataset registry defines per-dataset identity, partition and coverage-key rules; request
+  normalization is deterministic and rejects unknown fields. Focused and full Python checks pass.
 - M1.2: the versioned DuckDB catalog stores only immutable-object and coverage indexes. Atomic
   idempotent publication rejects conflicting metadata and unknown schema versions; real DuckDB
-  migration/rollback tests and all Python gates pass.
+  migration/rollback tests and all Python checks pass.
 - M1.3: canonical Parquet is atomically content-addressed and self-describes the request needed
   for crash recovery. Real files pass publish/read/recompute/recovery tests; tampering and invalid
-  primary-key revisions fail closed before formal use.
+  primary-key revisions are rejected before formal use.
 - M1.4: cache-first planning verifies actual Parquet before accepting DuckDB coverage, requests
   only missing keys, rejects incomplete/duplicate provider pages, and re-proves completeness after
   publication. Full cache, partial cache and pagination cases pass.
 - M1.5 slice 1: credential-isolated Tushare `trade_cal`/`daily` adapters persist raw and staging
-  evidence and emit canonical pages. Fixture gates pass; credential-gated network smoke is skipped
+  evidence and emit canonical pages. Fixture tests pass; credential-gated network smoke is skipped
   because `TUSHARE_TOKEN` is absent. Remaining registry normalizers are still open.
 - M1.5 complete: all ten registry datasets have fixture-backed Tushare normalization and must pass
   the same canonical object-store validation; composite limit/suspension/ST status remains explicit.
 - M1.6: immutable snapshot replacement selection is cutoff-aware; DuckDB PIT queries choose the
   last revision by business key and bind request/object provenance. Determinism and tamper tests pass.
-- M1 fresh review 1: kept M1 open with one PIT Critical and five High findings covering schema
+- M1 independent review 1: kept M1 open with one PIT Critical and five High findings covering schema
   drift, catalog-proof ownership, universe/key resolution, official Tushare contracts and endpoint
   pagination. Two provenance/migration Medium findings will be closed in the same Green cycle.
 - M1 Green 2 closes the review findings with exact canonical Arrow types, object-bound DuckDB
-  coverage proofs and digest checks, an explicit request-resolution seam, corrected official
+  coverage proofs and digest checks, an explicit request resolver, corrected official
   endpoint fields/parameters, independent endpoint pagination, deterministic availability times,
-  raw-to-staging content hashes, and full DuckDB type/nullability/identity validation. Fresh gates:
+  raw-to-staging content hashes, and full DuckDB type/nullability/identity validation. Verification:
   Python 56 passed/1 credential skip, Ruff/mypy/package Green; Rust fmt/Clippy/26 tests/docs Green.
-  M1 remains open until a new fresh-context reviewer finds no Critical or High issue.
-- M1 fresh review 2 found that the Green 2 proof was still only marginal rather than relational:
+  M1 remains open until a new independent reviewer finds no Critical or High issue.
+- M1 independent review 2 found that the Green 2 proof was still only marginal rather than relational:
   it accepted incomplete instrument-by-session matrices, mutable resolver intent, proof rows not
   bound to the normalized request, and non-exact Arrow layout. It also found unreachable delisting
   events, fabricated industry effective dates, unfiltered auxiliary status dates and hash-ordered
   revision ties. M1 remains active for a third Red/Green closure cycle.
 - M1 Green 3 makes required status coverage relational with a venue-scoped
   instrument-by-session matrix, reconstructs each catalog proof from immutable Parquet request
-  metadata, freezes exact ordered/non-null Arrow layouts, and makes resolvers additive-only.
+  metadata, specifies exact Arrow column order and nullability, and makes resolvers additive-only.
   Delisting and industry effective events, auxiliary status dates, business revisions and catalog
   metadata cardinality now have persisted adversarial regression tests.
-- M1 fresh review 3 found six remaining High gaps: sparse daily-bar proof, object/partition
+- M1 independent review 3 found six remaining High gaps: sparse daily-bar proof, object/partition
   universe conflict, ambiguous equal business revisions, an incomplete canonical provenance
   chain, missing ETF adapters, and cursor evidence without crash resume. Green 4 responds with
   strict bar/status matrices, universe-compatible partitions, ambiguity rejection, upstream hash
   binding, configured `etf_basic/fund_daily` routing, and verified raw-page resume.
-- M1 fresh review 4 showed that strict rejection alone blocked legitimate suspended histories and
+- M1 independent review 4 showed that strict rejection alone blocked legitimate suspended histories and
   that provenance hashes still needed existence/replay checks. Green 5 adds status-object-bound
   absence proofs and automatic snapshot dependencies, logical stock/ETF aggregation, cross-object
   business-revision conflict detection, filesystem-backed upstream verification, refreshable empty
-  endpoint results, and normalized fail-closed ETF lifecycle handling.
+  endpoint results, and ETF lifecycle validation that rejects unsupported statuses or missing required dates.
 - M1 Green 6/7 closes content-addressed absence identity, all-suspended empty bars, ETF formal
   portal paths, mutable empty-page revisions, complete-payload revision conflicts, and independent
   ten-dataset raw normalization replay. Mixed stock/ETF sparse requests and explicit status
   snapshots now use proof-derived dependencies without duplicate objects.
 - M1 Green 8 binds staging normalization time to referenced raw ingestion time, validates every
   raw endpoint fields/params against its partial canonical request, and audits revision identity
-  across overlapping coverage regardless of resolved-universe boundaries. Fresh gates pass with
-  83 Python tests plus the unchanged Rust contract suite; the next fresh review remains required.
-- M1 fresh review 8: FAIL with 0 Critical/2 High/3 Medium. A later status revision that remained
+  across overlapping coverage regardless of resolved-universe boundaries. All 83 Python tests
+  and the unchanged Rust contract suite passed. The next independent review was still pending.
+- M1 independent review 8: FAIL with 0 Critical/2 High/3 Medium. A later status revision that remained
   suspended could leave an older exact absence proof valid, and configured ETF identity was lost
   by `DataConfig.paths`, allowing an unconfigured provider/store path to publish stock-endpoint
   evidence for an ETF. The non-blocking Medium findings cover subsumed snapshot requests, a public
@@ -316,59 +331,58 @@ fresh-context review after every milestone.
 - M1 Green 9 makes every later eligible status revision invalidate the exact absence proof it
   supersedes, even when the corrected row remains suspended. `DataPaths` now carries the canonical
   ETF set from `DataConfig`; provider routing and independent raw/staging replay both reject stock
-  endpoint evidence for configured ETFs. A defense-in-depth test launders a `daily` chain through
-  an unclassified provider and proves the authoritative object store rejects it.
+  endpoint evidence for configured ETFs. A test used a provider with no ETF classification
+  to fetch stock `daily` data for an ETF and confirmed that the store rejected it.
 - Green 9 also merges compatible snapshot projections into one request/object proof and exposes a
   persisted snapshot loader that revalidates manifest identity, catalog metadata, Parquet bytes,
   absence dependencies, and cutoff semantics. Index membership no longer invents an infinite
   interval: V1 persists the exact dated `index_weight` snapshot and ingest-time availability.
-- Green 9 fresh gates: Python 87 passed/1 credential-gated skip; Ruff and unparameterized strict
+- Green 9 checks: Python 87 passed/1 credential-gated skip; Ruff and unparameterized strict
   mypy pass; Rust fmt/Clippy, 26 tests and doc-tests pass; wheel/sdist content and `tm-core` package
   verify pass; JSON and `git diff --check` pass. The skip remains unverified network behavior.
-- M1 fresh review 9: FAIL with 0 Critical/3 High/1 Medium. It reproduced an exact absence proof
+- M1 independent review 9: FAIL with 0 Critical/3 High/1 Medium. It reproduced an exact absence proof
   built from an older suspended row even though the same status object had a newer non-suspended
   revision; lowercase ETF identifiers routed and published through stock endpoints; and a stock
-  `daily_basic` chain produced under unclassified paths was accepted by the authoritative ETF
-  store. The remaining Medium is overlapping/subsumed coverage-object selection, beyond the exact
+  `daily_basic` chain produced under unclassified paths was accepted by the store configured for ETFs. The remaining Medium is overlapping/subsumed coverage-object selection, beyond the exact
   same-scope field projection merge closed in Green 9.
 - M1 Green 10 introduces one shared latest-status revision function used by proof construction and
   object-store evidence verification; snapshot freshness independently requires the exact evidence
   object's latest unique revision to remain suspended. ETF IDs canonicalize to uppercase before
-  becoming path authority, and raw replay rejects every configured-ETF dataset other than the two
-  explicit `instrument_master`/`daily_bars` routes. Overlapping immutable coverage objects may now
+  the data paths configuration uses them, and raw replay rejects every configured-ETF dataset except for the supported
+  `instrument_master` and `daily_bars` datasets. Overlapping immutable coverage objects may now
   coexist as revision evidence; snapshot coverage proves the exact key-set union and removes a
   request already subsumed by an equal-or-wider request.
-- Green 10 fresh gates: Python 92 passed with the real credential-gated `trade_cal` network smoke
+- Green 10 checks: Python 92 passed with the real credential-gated `trade_cal` network smoke
   executed rather than skipped; Ruff and strict mypy pass over 20 source files; Rust fmt/Clippy,
   26 tests and doc-tests pass; wheel/sdist content, canonical JSON, `tm-core` package verify and
   `git diff --check` pass. The credential is stored outside the repository with mode `0600`, loaded
   only into the test process environment, and is absent from specs/logs/artifacts.
-- M1 fresh review 10: FAIL with 0 Critical/3 High/0 Medium. An object's future `known_at_max`
+- M1 independent review 10: FAIL with 0 Critical/3 High/0 Medium. An object's future `known_at_max`
   could hide a cutoff-eligible correction in another row and preserve stale PIT values/absence
-  proofs; omitting upstream hashes bypassed all authoritative raw/staging replay and ETF checks;
+  proofs; omitting upstream hashes bypassed all checks that replay raw/staging data and ETF checks;
   and mutable pagination refreshed only the terminal short page, so corrections in an earlier
   cached full page remained permanently stale. The Green 9 findings and real Tushare evidence
   were independently confirmed closed/working.
-- M1 Green 11 makes authoritative canonical publication provenance-mandatory by default, with an
+- M1 Green 11 requires source evidence by default when publishing canonical objects, with an
   explicit `trusted_imports` mode limited to intentional fixtures/offline imports. PIT planning
-  fails closed on immutable objects that straddle the requested `known_at` cutoff, while revision
+  rejects immutable objects that straddle the requested `known_at` cutoff, while revision
   consistency and persisted absence-proof freshness evaluate eligible rows rather than skipping
   the whole object by `known_at_max`. Mutable/allow-empty endpoints refresh every cached page from
   offset zero so corrections in a prior full page become visible. The focused counterexamples and
-  the full 96-test Python suite pass with the real Tushare smoke executed and no skip; fresh review
+  the full 96-test Python suite pass with the real Tushare smoke executed and no skip; independent review
   11 remains required before M1 can close.
-- M1 fresh review 11: FAIL with 0 Critical/3 High/0 Medium. A correction could remain hidden when
+- M1 independent review 11: FAIL with 0 Critical/3 High/0 Medium. A correction could remain hidden when
   it lived only in a wider coverage or universe object; exact-scope objects still competed by one
   object-level `known_at_max`, losing per-key corrections; and composite status provenance could
   split its three endpoints across staging objects and wash a real suspension into `False`.
 - M1 Green 12 keeps all eligible exact-scope revision objects and lets the PIT query rank revisions
   per business key. It also compares selected rows with request-scoped rows across every canonical
-  object and fails closed when the newest eligible fact exists only outside the selected scope.
+  object and rejects the query when the newest eligible fact exists only outside the selected scope.
   Each status staging must now independently replay all three composite endpoints. Four persisted
   RED cases are Green, the reviewer's original attack script is closed, and the real-token Python
   suite is 100 passed with no skip. Ruff/mypy, Rust fmt/Clippy/26 tests/docs, Python packages,
-  `tm-core` package, JSON, credential scan and diff checks all pass; fresh review 12 remains pending.
-- M1 fresh review 12: FAIL with 0 Critical/2 High/2 Medium/1 Low. Persisted manifests did not rerun
+  `tm-core` package, JSON, credential scan and diff checks all pass; independent review 12 remains pending.
+- M1 independent review 12: FAIL with 0 Critical/2 High/2 Medium/1 Low. Persisted manifests did not rerun
   global correction checks, and raw status provenance could omit the next page after a full 5000-row
   `suspend_d` page. Disjoint-universe conflicts also leaked into narrow requests, while partially
   overlapping requests duplicated their shared object. Green 12's original three Highs were closed.
@@ -378,24 +392,26 @@ fresh-context review after every milestone.
   unions overlapping requests for the same dataset/universe. Four persisted RED cases and the
   reviewer's external attacks are Green; real-token Python is 104 passed with no skip. Ruff/mypy,
   Rust fmt/Clippy/26 tests/docs, Python packages, `tm-core` package, JSON, credential and diff checks
-  all pass; fresh review 13 remains pending.
-- M1 fresh review 13 found three final Highs: persisted same-`known_at` conflict drift,
+  all pass; independent review 13 remains pending.
+- M1 independent review 13 found three final Highs: persisted same-`known_at` conflict drift,
   cross-ingestion mutable-page splicing, and duplicate full-page fingerprints. Green 14 makes
   persisted and fresh identity checks identical, binds mutable chains to the latest single
   ingestion observation, and rejects repeated non-empty page fingerprints. The three external
-  attacks fail closed while same-fact/future and transitive-overlap controls pass.
-- M1 final gates: Python 107 passed/0 skipped with real Tushare; Ruff/mypy, Rust fmt/Clippy/26
+  reproductions are rejected, while same-fact/future and transitive-overlap controls pass.
+- M1 final checks: Python 107 passed/0 skipped with real Tushare; Ruff/mypy, Rust fmt/Clippy/26
   tests/docs, wheel/sdist, `tm-core` package, JSON, credential and diff checks pass. Per the user's
-  2026-08-11 process decision, M2-M5 use one bounded review each and M6 performs the final global
-  high-intensity review after E2E succeeds.
+  2026-08-11 process decision, M2-M5 use one focused review each and M6 performs the final comprehensive
+  review after E2E succeeds.
 
-## Risks and open questions
+## Risks recorded during planning
 
 - Provider permissions may not cover every requested Tushare dataset.
 - Historical corporate-action completeness must be proven before formal E2E.
-- Cross-language persisted Parquet bytes remain an M1 integration concern; M0 freezes
-  identical actual Arrow schemas and tests all eleven typed Rust domain adapters.
+- Reading the same persisted Parquet bytes in both languages was an M1 integration risk.
+  M0 specified identical Arrow schemas and tested all eleven typed Rust domain adapters.
 
-## Next step
+## Next step recorded at the end of interface design
 
-Create the M2 factor/signal specification, freeze public interfaces, then implement with TDD.
+The recorded next step was to write the M2 factor/signal specification, settle its
+public interfaces, and implement it with TDD. The milestone table above records
+subsequent completion.

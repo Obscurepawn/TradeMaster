@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/tm-core",
   "crates/tm-engine",
+  "crates/tm-python",
   "crates/tm-runner",
 ]
 

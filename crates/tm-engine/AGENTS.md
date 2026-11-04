@@ -1,27 +1,37 @@
 # tm-engine Guide
 
-This crate owns event orchestration and public execution traits. It must not
-read Tushare, DuckDB, or configuration files directly. Time ordering and event
-phase order are explicit and deterministic.
+This crate runs the event loop and defines the public execution traits. Process
+events in timestamp order. For events at the same time, specify which phase
+comes first so that replay produces the same result. Tushare, DuckDB, and
+configuration files are read outside the engine.
 
-Ledger mutations return a checked `LedgerEffect`: zero groups is a legal no-op,
-multiple groups preserve per-fill sources, and lot-only settlement is explicit.
-Never fabricate balanced postings for an expiry or empty settlement.
+Each ledger update returns a checked `LedgerEffect`. A no-op may have zero
+posting groups. If there are multiple groups, keep the source fill for each.
+Record settlements that only unlock lots as lot changes. Never create
+postings for an expiry or an empty settlement.
 
-`CnAshareOrderValidator` owns the fee schedule used for cash sufficiency and checks
-the exact event bar, instrument lot size, suspension/limit state, and frozen
-sellable quantity. `DailyBarExecutionModel` is a deterministic full-fill model for
-the user's small-account/no-impact scope; missing bars expire orders audibly.
+`CnAshareOrderValidator` uses its fee schedule to check available cash. It
+checks the bar for the order's instrument and event time, the lot size,
+suspension and price limits, and the quantity available to sell in the
+account snapshot. `DailyBarExecutionModel` assumes a small account with no
+market impact and fills eligible orders in full at the open. If an accepted
+order reaches the model without a matching bar, record its expiry.
 
-`LotLedger` uses exact scaled integers, FIFO lots, and the instrument's explicit
-`SettlementPolicy`. Build the prospective account state and checked `LedgerEffect`
-before committing it so any error leaves cash, lots, marks, and hashes unchanged.
+`LotLedger` uses exact scaled integers, FIFO lots, and each instrument's
+`SettlementPolicy`. Build the new account state and validate its `LedgerEffect`
+before committing either. An error must leave cash, lots, marks, and hashes
+unchanged.
 
 `ScheduledSignalStrategy` and online strategies both implement `StrategyAdapter`.
-`EventLoop` is the only formal orchestration path: settlement precedes session open,
-pending orders submit only when eligible, every accepted execution goes through the
-same ledger instance, and any component error terminates the run.
+The event runner dispatches these strategies through `EventLoop`. Settlement precedes the
+session open. Submit pending orders only when they are eligible, apply every
+accepted execution to the same ledger instance, and stop the run on any
+component error.
 
-Target-weight batches are portfolio intents, not independent alpha-ranked orders. Emit
-sells first and then use instrument ID as the economic ordering key; signal/order IDs
-may be final tie-breaks only and must not change allocation for an identical portfolio.
+The daily snapshot loop in `src/snapshot/` reads one session at a time. Size
+orders using prior closing marks, enforce opening permissions, and apply fills
+through `LotLedger`. Count sale proceeds in the next open's buy budget.
+
+Treat a batch of target weights as one desired portfolio. Emit sells before
+buys and sort each side by instrument ID. Signal and order IDs may break a
+final tie, but changing them must preserve the allocation.

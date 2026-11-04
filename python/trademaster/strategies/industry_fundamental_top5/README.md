@@ -1,48 +1,26 @@
-# 行业基本面策略兼容入口
+# Industry fundamental strategy · legacy module
 
-该目录保留旧模块路径兼容性。稳定公共入口已经改为：
+Existing callers can keep importing `trademaster.strategies.industry_fundamental_top5`. For new scripts, use the [public strategy package](../industry_fundamental/README.md). Both names run the same code. Set `--top-per-industry` to change the number of stocks selected per industry.
 
-```text
-trademaster.strategies.industry_fundamental
-```
+| Legacy name | Public name in `trademaster.strategies.industry_fundamental` |
+| --- | --- |
+| `IndustryFundamentalTop5Config` | `IndustryFundamentalConfig` |
+| `IndustryFundamentalTop5Strategy` | `IndustryFundamentalStrategy` |
 
-`Top1`、`Top5`和“Top10行业×Top1”现在都是`IndustryFundamentalConfig`配置，不再作为包名或类型身份。
+## Reproduce a selection or check a historical run
 
-## 当前运行链路
+The [offline selection example](../industry_fundamental/README.md#try-the-selection-on-a-small-portfolio) checks eight targets of 12.5% each. The [ten-year Top1 command](../industry_fundamental/README.md#check-coverage-for-the-ten-year-top1-run) checks historical membership in the project cache. For `000009.SZ` on 2016-11-07 the historical interval is missing, so the command stops before it can produce a report.
 
-九项基本面指标不再由策略私有函数计算。它们注册为9个managed atomic factors，并组合为：
+At each rebalance the runner saves the complete candidate snapshot, materializes nine atomic factors and two composites, then records the stocks it selects. `fundamental.composite.industry_relative@1` ranks stocks within an industry. `fundamental.composite.global@1` supplies the scores averaged to rank industries. A complete 20-rebalance run produces 220 factor materializations. The v3 bundle links these records to the Rust result and reports. With complete cached requests, the CLI reports `provider_calls` of zero. [Factor management guide](../../../../docs/factor-management.md)
 
-- `fundamental.composite.industry_relative@1`：行业内选股；
-- `fundamental.composite.global@1`：行业平均分排名。
+## Historical data and accounting
 
-每个真实调仓截面先发布完整candidate input snapshot，然后物化原子和复合因子；策略层只消费factor artifacts，执行行业筛选、TopN和精确等权。正式bundle v3同时绑定输入snapshot、11个definitions、220个materializations、selection、Rust结果及报告。
+| What affects the result | How this runner handles it |
+| --- | --- |
+| Publication timing | Selection uses original statements (`update_flag=0`) announced before the signal date. |
+| Industry membership | The default looks up each candidate’s SW2021 industry on the signal date using `in_date` and `out_date` from `index_member_all`. A gap stops selection. The `static_latest_experiment` sensitivity test can use a later classification to fill that gap. It records a separate strategy ID. |
+| Execution evidence | For a stock with a daily bar, the runner uses positive volume as its tradability test and requires the stock’s price limits on execution days. If the bar is missing and a prior close exists, it carries that price forward and records the stock as suspended. The evidence records the missing bar. If there is no prior close, it skips the stock for that day. |
+| Corporate actions | Orders, lots and commissions use prices adjusted by `adj_factor` and normalized to the end of the period. The ledger has no separate postings for cash dividends or splits, so share counts, cash and minimum commissions are approximate. |
+| Blocked exits | The strategy schedules exit attempts for up to 20 trading sessions and revisits remaining holdings on later rebalances. The report separates residual positions and cash from target weights. |
 
-因子存储、血缘、评估与CLI详见[因子管理文档](../../../../docs/factor-management.md)。
-
-## 真实十年运行
-
-```bash
-cargo build --release -p tm-runner
-IFS= read -r trademaster_token < ~/.config/trademaster/tushare_token
-TUSHARE_TOKEN="$trademaster_token" uv run python -m \
-  trademaster.strategies.industry_fundamental \
-  --data-root data/strategies/industry-fundamental-top5-10y \
-  --output-root artifacts/strategies/industry-fundamental-managed-top1-final-v2 \
-  --runner target/release/tm-runner \
-  --industry-membership-policy historical_interval_required \
-  --top-per-industry 1
-```
-
-相同参数再次运行时会先检查DuckDB，再复读真实Tushare Parquet和factor Parquet；无效token的clean replay必须保持provider调用为0。
-
-## 数据边界
-
-- 财务数据只使用公告日在信号前的`update_flag=0`原始版本；
-- 正式模式按`index_member_all.in_date/out_date`解析信号日所属行业；任一候选缺历史区间即
-  fail closed。`static_latest_experiment`只用于显式非PIT敏感性实验，并拥有不同策略definition；
-- 股票价格继续使用`adj_factor`连续价格作为研究执行近似，不等同于公司行动现金账本；
-- 执行日缺少精确状态/涨跌停证据会fail closed；ETF只有在显式绑定交易所limit-rule evidence时才能由规则计算界限。
-
-2026-08-23的M9审查确认旧Top1/Top10报告曾把未来`in_date`的当前行业映射回填历史，且连续
-复权价不能证明精确的100股/费用/公司行动会计。旧收益报告已降级为审查前诊断证据；在
-historical interval coverage与Rust公司行动合同补齐前，不应引用为正式A股执行收益。
+An August 2026 audit found that earlier Top1 and Top10-industry reports applied current industry membership to earlier dates. The project withdrew those performance conclusions and retained the reports to document the classification error. [Audit record](../../../../specs/20260823-m9-full-a-20y-factor-evaluation-quality.md)

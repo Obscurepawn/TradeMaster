@@ -53,6 +53,8 @@ __pycache__/
 /htmlcov/
 /build/
 /dist/
+# Editable native builds also install the wheel schema resources beside the extension.
+/python/trademaster/schemas/
 
 # -----------------------------------------------------------------------------
 # Rust build and profiling output

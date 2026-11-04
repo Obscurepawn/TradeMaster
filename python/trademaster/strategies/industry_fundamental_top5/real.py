@@ -661,7 +661,6 @@ def run_real_strategy(
     *,
     data_root: Path,
     output_root: Path,
-    runner_command: tuple[str, ...],
     config: RealStrategyConfig | None = None,
     now: datetime | None = None,
     ingestion_clock: Callable[[], datetime] | None = None,
@@ -1340,7 +1339,7 @@ def run_real_strategy(
             event_times=tuple(_at(day, 7) for day in event_days),
             close_values=tuple(benchmark_close[day] for day in event_days),
         )
-        bundle = E2ERunnerClient(command=runner_command).execute(
+        bundle = E2ERunnerClient().execute(
             request,
             output_dir=output_root,
             benchmarks=(benchmark_series,),
@@ -1567,7 +1566,7 @@ def run_real_strategy(
                 "strategy_summary": summary_path,
             },
         )
-        verify_e2e_bundle(bundle.manifest_path, runner_command=runner_command)
+        verify_e2e_bundle(bundle.manifest_path)
         return RealStrategyOutcome(
             bundle=bundle,
             summary_path=summary_path,

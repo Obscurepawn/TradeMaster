@@ -1,6 +1,7 @@
 # Packaged Contract Guide
 
-These JSON files are the canonical language-neutral contracts packaged by both
-Cargo and the Python wheel. Change fields, enums, sort keys, fixed values, or
-semantic constraints only with a version decision, dual-language tests, and a
-fresh-context interface review. Do not keep a second editable copy elsewhere.
+Cargo and the Python wheel ship these event-run contracts from this directory.
+For a change to a field, type, unit, nullable value, enum, sort key or
+semantic constraint, choose the version, update the fixtures and migration
+notes, and request an independent interface review. Run the [Python](../../../tests/test_schema_golden.py)
+and [Rust](../tests/shared_schema.rs) schema tests.

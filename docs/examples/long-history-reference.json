@@ -1,0 +1,16 @@
+{
+  "snapshot_id": "6d91f2ca80bb713ac3785bd3232a77b1d322e3615b44556ecadc4ebdbdacc6e8",
+  "market_sha256": "e75d4115bab0aa0b73ec5ba601ae00de43afc122b3c46d6556c75b2a0c8b571a",
+  "strategies": {
+    "sma200": {
+      "digest": "bc1446a83ea1d0aac4cb16196c624c59e3122f10f94b847e2693b6dda492191e",
+      "fill_count": 220,
+      "ending_equity_cny": "23600.03"
+    },
+    "buy_and_hold": {
+      "digest": "e45b20324262248fc91903780c4f66973d1d71a5dc48f5ff852a9d4b59075014",
+      "fill_count": 2,
+      "ending_equity_cny": "115980.02"
+    }
+  }
+}

@@ -1,11 +1,13 @@
-# Reporting Layer Guide
+# Reports
 
-Reporting consumes immutable, identity-bound run outputs. It never repairs missing
-trades, forward-fills benchmarks silently, or mutates strategy results.
+Read immutable outputs by run identity. Count recorded trades and require
+benchmark observations on the strategy's valuation dates.
 
-Metrics are pure functions with explicit annualization and alignment policies. Return
-`None` for undefined ratios or unrecovered drawdowns; never emit NaN or infinity.
+Compute metrics with pure functions. Specify the annualization and alignment
+rules. Return finite metrics and use `None` for undefined ratios and the
+recovery time of an unrecovered drawdown.
 
-HTML reports bind run/snapshot/strategy/benchmark identities and embed Plotly JS for
-offline reading. Charts must label units and distinguish strategy, benchmarks,
-drawdowns, transaction costs, industry exposure, and market-cap exposure.
+Record the run, snapshot, strategy and benchmark IDs in HTML reports. Embed
+Plotly JS for offline viewing. Label chart units and distinguish the strategy,
+benchmarks, drawdowns, transaction costs, industry exposure and market-cap
+exposure.

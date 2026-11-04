@@ -1,27 +1,53 @@
-# 行业基本面策略
+# Industry fundamental strategy
 
-这是可配置行业基本面策略的稳定公共入口。`Top1`、`Top5` 和“先选Top行业”都是配置，
-不再体现在包名或类型名中。九项原子指标、行业内复合分和全市场复合分由
-`trademaster.factors` 注册、物化和管理；策略只负责候选维度、行业选择、目标权重和调仓。
+This strategy ranks historical CSI 300 constituents on nine fundamental factors each May and November. It selects up to five stocks per eligible SW2021 industry by default and assigns equal target weights across all picks. Use this package for the public Python API and command-line entry point.
 
-正式运行生成E2E bundle v3，绑定candidate input snapshot、11个factor definitions、每期11个
-materializations、selection、Rust request/result、HTML、summary和Markdown。执行日缺少状态/涨跌停
-证据时fail closed；同一target portfolio按卖出优先和instrument ID稳定执行，不受signal ID影响。
+```mermaid
+flowchart LR
+    A["Candidates on the signal date"] --> B["Nine fundamental factors"]
+    B --> C["Rank industries and stocks"]
+    C --> D["Equal-weight targets"]
+    D --> E["Rust fills and holdings"]
+```
 
-完整存储、血缘、评估和CLI说明见[因子管理文档](../../../../docs/factor-management.md)。
+## Choose the portfolio
+
+| Portfolio | CLI options |
+| --- | --- |
+| Up to five stocks per eligible industry (default) | `--top-per-industry 5` |
+| One stock per eligible industry | `--top-per-industry 1` |
+| One stock in each of the ten highest-scoring industries | `--top-industries-by-mean-score 10 --top-per-industry 1` |
+
+The industry-relative composite ranks stocks within each industry. When you also select industries, the strategy ranks each industry by its members’ average global composite score. When scores tie, the lower instrument or industry ID comes first. Requesting ten industries with fewer than ten eligible groups stops selection.
+
+## Try the selection on a small portfolio
+
+From the repository root, run the selection test with nine sample stocks across two industries.
 
 ```bash
-export TUSHARE_TOKEN="your-token"
+uv run --locked --extra dev pytest -q \
+  tests/test_industry_fundamental_top5.py::test_selects_top_five_per_industry_with_stable_ties_and_exact_equal_weights
+```
 
-uv run python -m \
-  trademaster.strategies.industry_fundamental \
+The test prints `1 passed`. It checks that five stocks from the first industry and three from the second receive 12.5% each. It exercises the ranking and target weights using local inputs. [Fixture and expected selections](../../../../tests/test_industry_fundamental_top5.py)
+
+## Check coverage for the ten-year Top1 run
+
+The default research period is **2016-08-12 through 2026-08-11**, with **CNY 500,000** in starting cash. This configuration selects one stock per industry using membership as of each signal date. The CLI reads cached requests from local Parquet and uses `TUSHARE_TOKEN` for the provider client. Export the token in your shell before running the command from the repository root.
+
+```bash
+uv run --locked python -m trademaster.strategies.industry_fundamental \
   --data-root data/strategies/industry-fundamental-top5-10y \
   --output-root artifacts/strategies/industry-fundamental-managed \
-  --runner target/release/tm-runner \
   --top-per-industry 1
 ```
 
-正式模式默认要求信号日存在历史行业`in_date/out_date`区间；Tushare源历史不足时会fail
-closed，而不会用当前行业回填。已有完整本地cache时，相同请求会保持provider调用为0。
+With the audited cache at that path, the expected result is `historical industry interval is unavailable for 000009.SZ at 2016-11-07`. Its first recorded industry interval starts on 2021-07-30. The run stops before selection and Rust execution. Completing a historical run requires dated membership for every candidate on each signal date. [Historical coverage audit](../../../../specs/20260823-m9-full-a-20y-factor-evaluation-quality.md)
 
-旧入口 `trademaster.strategies.industry_fundamental_top5` 暂时保留兼容性。
+## Read a completed run
+
+With complete inputs, the command prints JSON containing paths to the HTML `report`, the `markdown_report` and the `summary`. The summary lists the final cash weight, rejected orders, and holdings outside the final target. Within a target batch, the runner processes sells first and uses instrument ID for stable ordering.
+
+The `bundle_manifest` links the candidate snapshots, 11 factor definitions and their values at each rebalance, stock selections, Rust request and result, and reports. The report annualizes weekly valuations using 52 periods per year. For a missing daily price with a prior close, this strategy carries the price forward and marks the stock suspended. Its share counts and fees reflect trading on adjusted prices.
+
+[Factor definitions and lineage](../../../../docs/factor-management.md) · [Historical data and accounting limits](../industry_fundamental_top5/README.md#historical-data-and-accounting) · [Public Python API](__init__.py)

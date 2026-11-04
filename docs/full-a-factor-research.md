@@ -1,28 +1,16 @@
-# 二十年全A因子研究
+# Twenty years of A-share factor research
 
-> **审查状态（2026-08-23）**：三路fresh-context审核确认的问题已经完成一次bounded修复，
-> 下文链接为修复后v2 panel / v3 report。审查前报告仍保留用于追溯，但不再作为正式结论。
+The M9 study evaluates public price factors and fundamental factors across historical A-share listings. After three independent reviews on 2026-08-23, the team rebuilt the factor panels and reports and withdrew the earlier conclusions. The earlier reports remain available for comparison. [Review and dispositions](reviews/20260823-m9-full-a-quality-review.md)
 
-## 1. 研究边界
+## Universe and coverage
 
-M9使用Tushare下载2006-08-23至运行时最新已完成交易日的因子研究数据。历史股票池来自
-`stock_basic`的L/D/P/G全部状态，并按上市/退市有效区间展开，因此不会只保留今天仍上市的
-股票。
+M9 requests data through the latest completed trading day. The recorded plan covered **2006-08-23 through 2026-08-21**: 4,860 sessions, 5,846 CNY stocks listed in Shanghai, Shenzhen or Beijing, and 52,563 download tasks. The universe uses all L/D/P/G statuses from `stock_basic` and expands each stock across its effective listing and delisting dates. For three historical codes absent from the current master, the plan inferred listing intervals from observed market data.
 
-当前正式计划为：
+**Plan SHA-256** `6ce15c56c759a79f635af3ac489bbeb624620670e4f4cd323eb80935ed17a633`
 
-- 起点：2006-08-23；
-- 终点：2026-08-21；
-- 交易日：4,860；
-- 区间内沪深京CNY股票：5,846，其中3个历史代码由market evidence补足生命周期；
-- 下载任务：52,563；
-- plan SHA-256：`6ce15c56c759a79f635af3ac489bbeb624620670e4f4cd323eb80935ed17a633`。
+Coverage includes the stock master, calendars, OHLCV, adjustment factors, daily valuations/market cap/turnover, price limits, suspensions, ST status, financial indicators, the three financial statements, common benchmarks and available SW2021 industry history. News, options, ticks and unlicensed proprietary flow data are outside scope.
 
-“完整全A”在这里指因子研究的数据闭包：股票主表、交易日历、OHLCV、复权因子、每日估值/
-市值/换手、涨跌停、停牌、ST、财务指标与三张财务报表、常用指数和可获得的SW2021行业
-成员。它不包含新闻、期权、逐笔行情或无许可的专有资金流。
-
-## 2. 数据与执行链
+## From Tushare to a report
 
 ```text
 Tushare
@@ -36,13 +24,9 @@ Tushare
   -> content-addressed JSON/Parquet + standalone HTML/Markdown
 ```
 
-原始Parquet是事实存储，`catalog.duckdb`只索引精确provider请求，`research.duckdb`只保存
-下载任务状态。任务完成时会重新验证文件存在、SHA-256、行数、字段，并要求task的canonical
-request SHA、evidence和Parquet内嵌request metadata三者一致。
-进程在provider对象写完、状态提交前退出时，下次运行会重新claim任务，但底层cache会复用对象，
-不会再次请求Tushare。
+Tushare responses go into Parquet. `catalog.duckdb` indexes them by request, and `research.duckdb` tracks download progress. Before marking a task complete, the downloader checks the file, hash, row count and fields. It matches the request hash in the task, the cache record and the Parquet metadata. If the process stops between writing a file and marking the task complete, the next run picks up the existing file.
 
-默认数据根：
+Default data root:
 
 ```text
 data/research/full-a-20y/
@@ -52,9 +36,9 @@ data/research/full-a-20y/
   plans/<plan-sha>/manifest.json
 ```
 
-## 3. 下载命令
+## Plan, download and verify
 
-token只加载到当前进程环境，不写进命令输出、Parquet或manifest：
+Set `TUSHARE_TOKEN` before running `plan` or `download`. The planner opens a Tushare client even when the stock list and calendars are already cached. The token stays in the process environment. The example uses the recorded M9 plan hash. For a new run, use the hash printed by `plan`.
 
 ```bash
 export TUSHARE_TOKEN="$(<~/.config/trademaster/tushare_token)"
@@ -73,13 +57,11 @@ tm-research-full-a --data-root data/research/full-a-20y verify \
   --plan-sha256 6ce15c56c759a79f635af3ac489bbeb624620670e4f4cd323eb80935ed17a633
 ```
 
-阶段为`bootstrap`、`market`、`status`、`statement`、`industry`和`benchmark`。可以用
-`--max-tasks N`做小批量验证；同一命令可重复执行，已完成任务不会调用provider。只有全部任务
-完成后，`verify`才会逐对象重验并成功。status v2分别列出`object_acquired`、
-`verified_empty`、`source_history_absent`和`permission_blocked`；已验证空响应不是权限成功或
-历史完整性的替代证明。
+Download phases are `bootstrap`, `market`, `status`, `statement`, `industry` and `benchmark`. To run a small batch, set `--max-tasks N` and repeat the command to resume. Once all phases finish, `verify` checks every object. In the status output, `object_acquired` means rows were saved and `verified_empty` means the request returned zero rows. Confirmed gaps in source history and denied access have separate statuses, `source_history_absent` and `permission_blocked`.
 
-## 4. 面板、标签与评估
+## Materialize panels and evaluate factors
+
+Replace the angle-bracketed plan and manifest references below with the values printed by the preceding commands.
 
 ```bash
 tm-research-full-a --data-root data/research/full-a-20y materialize \
@@ -115,117 +97,94 @@ tm-research-full-a --data-root data/research/full-a-20y verify-report \
   --manifest <report-manifest-path>
 ```
 
-报告identity v3绑定实际参与评估的market panel与factor manifest SHA；CLI在计算前重验其
-Parquet对象，`verify-report`再重验报告bundle，不能只凭可变DuckDB行或报告文件名复现结论。
+Each v3 report records the manifest hashes for its market panel and factor inputs. The CLI verifies the input files before evaluation. Use `verify-report` to check the resulting report files.
 
-稠密panel保留每只有效股票的每个交易session。停牌或缺bar不会被删除，因此`lag(5)`始终是
-五个市场session，而不是五条非空观测。因子在完整session窗口计算，之后才抽取月末观察。
+The dense panel retains each trading session for each active stock, including suspensions and missing bars. Thus `lag(5)` means five **market sessions**. Factors use the full session windows before sampling month-end observations.
 
-close-derived因子的事件是T日收盘；`next_session_close`标签以T+1收盘入场，horizon为`h`
-时以入场后第`h`个session收盘退出。入场不可交易、entry/exit价格缺失或未来session不足都会
-保留label行并写明确invalid reason。
+For a factor observed at the close of T, `next_session_close` measures the return from the close of the next trading session to the close `h` sessions later. If entry is blocked, a price is missing or the sample ends too soon, the evaluator keeps the label row and records the reason.
 
-## 5. 已管理因子
+## Managed factors
 
-第一份公开因子报告覆盖：
+The first public report covers `huatai53.size.log_total_market_value@1` and `gtja191.alpha014/015/018/020/031/034/046/053/058/088@1`. The fundamental PIT builder also produces nine existing atomic factors and `fundamental.composite.global@1`.
 
-- `huatai53.size.log_total_market_value@1`；
-- `gtja191.alpha014/015/018/020/031/034/046/053/058/088@1`。
+Tushare reports a filing's date in `ann_date`. The factor builder first uses the filing in the next eligible session. When the publication time of a revision is unknown, it uses the original `update_flag=0` record. The manifest identifies the policies as `date_only_next_eligible_session` and `original_only_without_revision_known_at`. Each observation records `financial_known_at_session`.
 
-基本面PIT构建器另生成现有9个atomic因子和`fundamental.composite.global@1`。Tushare
-`ann_date`只有日期、没有盘中发布时间，因此公告最早从严格晚于`ann_date`的下一eligible
-session可用；没有修订发布时间时只接受`update_flag=0`原始版本，修订值不会回填到历史公告
-日。manifest分别记录`date_only_next_eligible_session`与
-`original_only_without_revision_known_at` policy，并逐行保留`financial_known_at_session`。
+The builder computes `fundamental.composite.industry_relative@1` when every stock has one industry assignment on its observation date. A missing or ambiguous assignment produces `historical_industry_membership_interval_gap` in the manifest.
 
-`fundamental.composite.industry_relative@1`只有在每个观察键都具有唯一历史行业interval时才
-materialize；否则manifest记录`historical_industry_membership_interval_gap`，不会用当前行业
-静态回填过去。
+## Metric definitions
 
-## 6. 测评指标语义
+| Metric | Interpretation |
+| --- | --- |
+| Universe coverage | Expected number of instrument × observation-date keys in the PIT universe. |
+| Factor / Label / Joint coverage | Fractions with a valid factor, valid label or both. Each denominator is the PIT universe. |
+| Horizon label coverage / invalid reason | Report label coverage, joint coverage and invalid reasons separately for each horizon. |
+| IC / RankIC | Pearson or rank correlation between raw factor values and forward returns. |
+| ICIR / RankICIR | Mean IC divided by its time-series standard deviation, without implicit annualization. |
+| IC t-stat | Significance of the mean under independent, identically distributed observations. |
+| Newey-West t-stat | Accounts for heteroskedasticity and serial correlation. Use this when reading overlapping horizons. |
+| Positive IC ratio | Fraction of observation periods with IC greater than zero. |
+| Quantile monotonicity | Correlation between the quantile number and its average return. |
+| Top-Bottom spread | Forward return of the economically top group minus the bottom group, using the definition's direction. IC and RankIC retain the raw sign. |
+| Direction | `-1` puts low raw values in the top group. `0/+1` puts high values in the top group. |
+| Spread Sharpe / drawdown | The shortest gap between observed month-ends was 14 sessions. For overlapping 20/60/120/252-session returns, cumulative spread, Sharpe, drawdown and recovery are N/A. |
+| Recovery events | Longest run of observations below the previous high-water mark. |
+| Top turnover | Change in top-group membership between consecutive observations. |
+| Size correlation | Cross-sectional correlation of the factor with `log(total_mv)`. |
+| Size-neutral RankIC | Regress `raw factor ~ 1 + log(total_mv)` cross-sectionally. Compute the RankIC between the residuals and future returns. |
+| Top cap tercile shares | Fractions of top-group members in the small, middle and large current-cap terciles of the full PIT universe. |
+| Industry RankIC | Within-industry RankIC where historical PIT membership exists. Otherwise N/A. |
+| Capacity proxy | Approximate AUM = the smallest traded amount among top-group stocks × participation rate × number of stocks. The proxy uses reported traded value and omits depth, impact, commissions, stamp duty, slippage and price-limit queues. |
+| Factor correlation | Calculate Pearson/Spearman for each event, then weight valid events equally. The count is the number of events. Use it to identify redundant factors. |
 
-| 指标 | 含义 |
-|---|---|
-| Universe coverage | PIT股票池中应有的股票×观察日数量 |
-| Factor / Label / Joint coverage | 因子有效、标签有效、两者同时有效的比例；分母始终是PIT universe |
-| Horizon label coverage / invalid reason | 每个horizon独立的标签/联合覆盖与失效原因；不能用跨horizon均值代替 |
-| IC / RankIC | 因子值与未来收益的Pearson/秩相关 |
-| ICIR / RankICIR | IC均值除以其时间序列标准差；当前不做隐式年化 |
-| IC t-stat | 假设独立同分布时的均值显著性 |
-| Newey-West t-stat | 修正异方差和时间自相关，重叠horizon应优先阅读它 |
-| Positive IC ratio | IC大于0的观察期比例 |
-| Quantile monotonicity | 分位编号与分位平均收益的相关性 |
-| Top-Bottom spread | 按definition方向后的经济Top减Bottom forward return；IC/RankIC仍为raw |
-| Direction | `-1`表示原始低值为经济Top；`0/+1`表示原始高值为Top；IC仍保留raw符号 |
-| Spread Sharpe / drawdown | 只对非重叠spread研究序列计算；重叠horizon为N/A |
-| Recovery events | spread离开高水位后最长水下观察数，不是自然日 |
-| Top turnover | 相邻观察期Top分组成员变化率 |
-| Size correlation | 因子与`log(total_mv)`的截面相关 |
-| Size-neutral RankIC | 截面回归`raw factor ~ 1 + log(total_mv)`后，残差与未来收益的RankIC |
-| Top cap tercile shares | 完整PIT universe按当期市值三分位切组后，方向化Top成员的小/中/大市值数量占比 |
-| Industry RankIC | 有历史PIT行业时的行业内RankIC；否则N/A |
-| Capacity proxy | `Top组最小成交额 × 参与率 × 股票数`的粗略AUM proxy |
-| Factor correlation | 先逐event算Pearson/Spearman再等权平均；记录数是有效event数，用于发现冗余 |
+The evaluator assigns each stock to a quantile **before** joining future returns. A stock that later delists stays in its original group. To measure what a portfolio could actually trade, replay the targets through Rust, which applies price limits and records delayed exits.
 
-HTML中的容量proxy没有模拟盘口、冲击、佣金、印花税、滑点或涨跌停排队，不等于实际可管理
-资金。Quantile在连接未来label前冻结，不会因退市或远期标签缺失改变当期成员；Top-Bottom也
-不是已经过Rust交易约束回放的策略收益。真实月末观察的最小间隔为14个session，因此20/60/
-120/252日forward标签属于重叠horizon，其spread累计、Sharpe、回撤与修复时间显示N/A。
+## Known data limits
 
-## 7. 已知数据边界
+- Tushare returned no independent Beijing (BSE) calendar. Since 2021-11-15, BSE sessions use a versioned SSE-derived mapping.
+- SW2021 dates industry membership with `in_date/out_date`. Some historical intervals since 2006 are missing, so industry-neutral metrics for those observations are unavailable.
+- `stock_st` advertises history from 2000. Coverage still requires an audit by day.
+- HFQ = `raw_price * adj_factor` is for factor research. Execution and trading constraints use raw market prices.
+- Direction comes from the managed definition and enters the evaluation config hash. It is set independently of full-sample returns: `-1` for Size and `0` for the ten GTJA factors.
+- The remaining breakdowns cover ST status, board, listing age and price-limit entries/exits. Producing them requires dated status histories and a replay of delayed exits.
 
-- Tushare当前不返回独立BSE交易日历；北交所自2021-11-15起采用带policy ID的SSE session
-  派生映射。
-- SW2021行业接口有`in_date/out_date`，但不能假设它完整重建了2006年以来每次历史修订；
-  覆盖不足的行业中性指标显示N/A或blocked。
-- `stock_st`虽声明历史从2000年开始，实际完成后仍需按日coverage审计。
-- HFQ=`raw_price * adj_factor`只服务因子研究；Rust执行和成交约束继续使用原始行情。
-- direction映射来自managed definition并进入evaluation config hash；不会用全样本收益事后
-  选择方向。当前Size为`-1`，10条GTJA为`0`。
-- 当前报告尚未把ST、板块、上市年龄、涨跌停入场/退出拆成完整稳健性表；历史ST覆盖和精确
-  A股退出延迟需要独立coverage proof与Rust规则回放，报告将其列为blocker而不是伪造收益。
+## Results from the M9 run
 
-## 8. 本次真实结果
+The local index is `artifacts/research/full-a-20y/FINAL_REPORT.md`. Generated `artifacts/` files are excluded from Git. The final download marked 52,563/52,563 tasks complete, with 52,439 `object_acquired`, 124 `verified_empty` and 0 failed/blocked. With a real token, a full cache probe made zero provider calls. Verification rechecked the task/evidence/Parquet request SHA, object SHA, metadata and row counts. Raw data occupied about 2.7 GB.
 
-本地运行后产物总索引位于`artifacts/research/full-a-20y/FINAL_REPORT.md`；`artifacts/`是
-可重复生成目录，不随Git仓库发布。
+**Market panel manifest** `9f163dd4c7b3fe958c4beb363303e767dbe40c00523e5d2a928ef24feb1d4c89`
 
-最终下载状态为52,563/52,563 completed：52,439个`object_acquired`、124个
-`verified_empty`、0 failed/blocked。真实token下完整cache probe的provider调用为0；最终
-verify同时重验task/evidence/Parquet request SHA、对象SHA、metadata和行数。原始数据约2.7GB。
+**Fundamental manifest** `2f71fc7d9e081d7368ddbd0af8d0adf076b39e6a24ae03c9618afa29a1f2b2a2`
 
-修复后市场panel manifest为
-`9f163dd4c7b3fe958c4beb363303e767dbe40c00523e5d2a928ef24feb1d4c89`，
-fundamental manifest为
-`2f71fc7d9e081d7368ddbd0af8d0adf076b39e6a24ae03c9618afa29a1f2b2a2`。
+### Public price factors (11)
 
-公开11因子报告：
+- **HTML** `artifacts/research/full-a-20y/public-factor-report/objects/b3/b372bf8d50215a26bdfde017845b4a387307fe6561c7b57948909b2151a4a0c5.html`
+- **Markdown** `artifacts/research/full-a-20y/public-factor-report/objects/92/92bc256f85b9bfd71440aa795405df5842f1e15ce4a075c53a511d401740a1b6.md`
+- **Report ID** `413067aee36089e6f3295c5165e1f069217a71c481436295d8411512ea29b927`
+- **Report manifest** `5d0a8013a0e2086e6dcb10af1ee84499c75034048f75a7bcb6ed82eb109407f6`
 
-- HTML：`artifacts/research/full-a-20y/public-factor-report/objects/b3/b372bf8d50215a26bdfde017845b4a387307fe6561c7b57948909b2151a4a0c5.html`
-- Markdown：`artifacts/research/full-a-20y/public-factor-report/objects/92/92bc256f85b9bfd71440aa795405df5842f1e15ce4a075c53a511d401740a1b6.md`
-- report ID：`413067aee36089e6f3295c5165e1f069217a71c481436295d8411512ea29b927`
-- report manifest：`5d0a8013a0e2086e6dcb10af1ee84499c75034048f75a7bcb6ed82eb109407f6`
+| Factor | 20-session raw RankIC | Size-neutral RankIC |
+| --- | ---: | ---: |
+| Alpha046 | 0.0546 | 0.0562 |
+| Alpha034 | 0.0450 | 0.0466 |
+| Alpha088 | -0.0690 | -0.0675 |
+| Size | -0.0668 | 0.0074 |
 
-20-session代表性raw RankIC：Alpha046为0.0546、Alpha034为0.0450、Alpha088为-0.0690、
-Size为-0.0668。Size中性后分别为0.0562、0.0466、-0.0675和0.0074，说明Size原因子的
-表现几乎完全是市值暴露。技术因子Top组换手约0.74–0.81；方向化Size Top组换手约0.11、
-容量proxy约475万元，符合小资金研究但不是成交保证。逐event Rank相关中Alpha031/034为
--1.0000、Alpha034/046为0.9583、Alpha058/088为0.5575，存在明显冗余。
+Almost all of Size's raw effect was market-cap exposure. The top group for technical factors turned over about 0.74–0.81, compared with about 0.11 for direction-adjusted Size. Its capacity proxy was about CNY 4.75 million. Per-event rank correlations indicated redundancy: Alpha031/034 was -1.0000, Alpha034/046 was 0.9583 and Alpha058/088 was 0.5575.
 
-本地基本面10因子报告：
+### Fundamental factors (10)
 
-- HTML：`artifacts/research/full-a-20y/fundamental-factor-report/objects/50/5005791eabfcc7a6f2f0a93ffefe7003b9c670b7bf483553d4378a3a905cfbc0.html`
-- Markdown：`artifacts/research/full-a-20y/fundamental-factor-report/objects/2d/2d0ea21e0e5b743555bf783bbf52b1f629cf421a5e56c0a783681fea9bf4b86a.md`
-- report ID：`eddc6bef5097db84e1cb7d337d401bf241ec478536a0bdcf208aa0d52fb9a761`
-- report manifest：`93c82636da316a441ef67743e8966cee1ff7b578f575614a410f6334733542d2`
+- **HTML** `artifacts/research/full-a-20y/fundamental-factor-report/objects/50/5005791eabfcc7a6f2f0a93ffefe7003b9c670b7bf483553d4378a3a905cfbc0.html`
+- **Markdown** `artifacts/research/full-a-20y/fundamental-factor-report/objects/2d/2d0ea21e0e5b743555bf783bbf52b1f629cf421a5e56c0a783681fea9bf4b86a.md`
+- **Report ID** `eddc6bef5097db84e1cb7d337d401bf241ec478536a0bdcf208aa0d52fb9a761`
+- **Report manifest** `93c82636da316a441ef67743e8966cee1ff7b578f575614a410f6334733542d2`
 
-20-session raw/Size中性RankIC：book yield 0.0555/0.0590、dividend yield
-0.0382/0.0499、earnings yield 0.0335/0.0578、global composite 0.0279/0.0459。
-保守PIT政策使global composite raw RankIC从审查前0.0315降至0.0279；9个财务atomic因子中
-约17万到18万条共同有效暴露的值发生变化，global composite有613,223条共同有效值变化。
-基本面Top组换手约0.04–0.16，容量proxy约1,600万至6,500万元。行业relative composite仍因
-15,013个历史interval gap blocked。
+| Factor | 20-session raw RankIC | Size-neutral RankIC |
+| --- | ---: | ---: |
+| Book yield | 0.0555 | 0.0590 |
+| Dividend yield | 0.0382 | 0.0499 |
+| Earnings yield | 0.0335 | 0.0578 |
+| Global composite | 0.0279 | 0.0459 |
 
-真实panel coverage：15,882,389个active session rows；15,370,049个bar；同日bar缺
-adj_factor为0，缺daily_basic为20；显式停牌473,924行、由adj连续性识别的停牌52,523行、
-仍无证据解释的缺bar为4,963行。有效factor和forward-return中的非有限值均为0。
+The stricter PIT policy reduced global composite raw RankIC from 0.0315 to 0.0279. For the nine atomic fundamentals, about 170,000–180,000 exposures valid under both policies changed value. The global composite changed in 613,223 jointly valid cases. Top-group turnover was about 0.04–0.16, with capacity proxies of roughly CNY 16–65 million. The builder skipped the industry-relative composite because 15,013 historical industry intervals were missing.
+
+Across 15,882,389 active session rows the real panel had 15,370,049 bars. Zero same-day bars lacked `adj_factor`, and 20 lacked `daily_basic`. Explicit suspensions accounted for 473,924 rows and continuity of adjustments identified 52,523 more. Another 4,963 missing bars lacked explanatory evidence. There were zero non-finite values among valid factors or forward returns.

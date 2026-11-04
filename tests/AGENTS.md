@@ -1,8 +1,9 @@
 # Test Guide
 
-Tests assert public behavior and stable records. Prefer real temporary
-DuckDB/Parquet/Arrow collaborators. Mock only external, slow, destructive, or
-nondeterministic boundaries. Every test has one primary reason to fail.
+Test public behavior and the records callers rely on. Prefer temporary DuckDB
+databases, real Parquet files, and Arrow tables. Use mocks only for external,
+slow, destructive, or nondeterministic operations. Give each test one primary
+reason to fail.
 
-Credential-gated tests must report skip separately and never count as network
-validation.
+When missing credentials prevent a network test from running, report it as
+skipped and exclude it from the count of verified network tests.

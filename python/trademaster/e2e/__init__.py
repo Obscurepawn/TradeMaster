@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
@@ -17,6 +16,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from trademaster import _native
 from trademaster.contracts import SnapshotManifest, _require_utc
 from trademaster.factors.management import FactorDefinition
 from trademaster.factors.storage import FactorArtifact, FactorMaterialization
@@ -34,7 +34,7 @@ _SCALE = Decimal(100_000_000)
 
 
 class E2ERunnerError(RuntimeError):
-    """The runner process or its identity-bound output failed closed."""
+    """The engine could not execute the request or reproduce its saved result."""
 
 
 def _canonical_integer(value: str) -> str:
@@ -449,11 +449,6 @@ def _write_atomic(path: Path, payload: bytes) -> None:
 
 
 class E2ERunnerClient:
-    def __init__(self, *, command: tuple[str, ...]) -> None:
-        if not command or any(not part for part in command):
-            raise ValueError("runner command cannot be empty")
-        self.command = command
-
     def execute(
         self,
         request: RunnerRequest,
@@ -470,17 +465,12 @@ class E2ERunnerClient:
             raise ValueError("annual sessions must be positive")
         request_bytes = _canonical_json(request.model_dump(mode="json"))
         request_sha256 = hashlib.sha256(request_bytes).hexdigest()
-        completed = subprocess.run(
-            self.command,
-            input=request_bytes,
-            capture_output=True,
-            check=False,
-        )
-        if completed.returncode != 0:
-            diagnostic = completed.stderr.decode("utf-8", errors="replace")[-2000:]
-            raise E2ERunnerError(f"Rust runner exited with {completed.returncode}: {diagnostic}")
         try:
-            result = _RunnerResult.model_validate_json(completed.stdout, strict=True)
+            result_bytes = _native.run_event(request_bytes)
+        except ValueError as error:
+            raise E2ERunnerError(str(error)) from error
+        try:
+            result = _RunnerResult.model_validate_json(result_bytes, strict=True)
         except ValueError as error:
             raise E2ERunnerError("Rust runner returned an invalid result") from error
         if (
@@ -535,7 +525,7 @@ class E2ERunnerClient:
         factor_materializations_dir.mkdir(parents=True, exist_ok=True)
         factor_objects_dir.mkdir(parents=True, exist_ok=True)
         _write_atomic(request_path, request_bytes)
-        _write_atomic(result_path, completed.stdout)
+        _write_atomic(result_path, result_bytes)
         snapshot_descriptors: list[dict[str, object]] = []
         object_descriptors: dict[str, dict[str, object]] = {}
         for snapshot_id in sorted(manifests):
@@ -644,7 +634,7 @@ class E2ERunnerClient:
             exposures=exposures,
             annual_sessions=annual_sessions,
         )
-        result_sha256 = hashlib.sha256(completed.stdout).hexdigest()
+        result_sha256 = hashlib.sha256(result_bytes).hexdigest()
         report_input_sha256 = hashlib.sha256(report_input_bytes).hexdigest()
         report_sha256 = hashlib.sha256(report_path.read_bytes()).hexdigest()
         bundle_manifest = {
@@ -729,7 +719,7 @@ def attach_e2e_bundle_artifacts(
     _write_atomic(manifest_path, _canonical_json(manifest))
 
 
-def verify_e2e_bundle(manifest_path: Path, *, runner_command: tuple[str, ...]) -> E2ERunBundle:
+def verify_e2e_bundle(manifest_path: Path) -> E2ERunBundle:
     """Re-read snapshots, replay Rust, and rebuild the report for a bundle."""
     root = manifest_path.resolve().parent
     try:
@@ -776,7 +766,7 @@ def verify_e2e_bundle(manifest_path: Path, *, runner_command: tuple[str, ...]) -
     }
     bundle_v3 = manifest["schema_id"] == "trademaster.e2e-bundle/v3"
 
-    def verified_path(name: str) -> tuple[Path, str]:
+    def verified_file(name: str) -> tuple[Path, str, bytes]:
         descriptor = manifest[name]
         if not isinstance(descriptor, dict) or set(descriptor) != {"path", "sha256"}:
             raise E2ERunnerError(f"bundle {name} descriptor is invalid")
@@ -788,15 +778,14 @@ def verify_e2e_bundle(manifest_path: Path, *, runner_command: tuple[str, ...]) -
             path.relative_to(root)
         except ValueError as error:
             raise E2ERunnerError(f"bundle {name} path escapes its root") from error
-        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        payload = path.read_bytes()
+        digest = hashlib.sha256(payload).hexdigest()
         if digest != descriptor["sha256"]:
             raise E2ERunnerError(f"bundle {name} hash mismatch")
-        return path, digest
+        return path, digest, payload
 
-    request_path, request_sha256 = verified_path("request")
-    result_path, result_sha256 = verified_path("result")
-    report_input_path, _ = verified_path("report_input")
-    report_path, report_sha256 = verified_path("report")
+    request_path, request_sha256, request_bytes = verified_file("request")
+    result_path, result_sha256, result_bytes = verified_file("result")
     if bundle_v3:
         additional = manifest["additional_artifacts"]
         if (
@@ -819,8 +808,8 @@ def verify_e2e_bundle(manifest_path: Path, *, runner_command: tuple[str, ...]) -
             if hashlib.sha256(path.read_bytes()).hexdigest() != descriptor["sha256"]:
                 raise E2ERunnerError("additional bundle artifact hash mismatch")
     try:
-        request = RunnerRequest.model_validate_json(request_path.read_bytes(), strict=True)
-        result = _RunnerResult.model_validate_json(result_path.read_bytes(), strict=True)
+        request = RunnerRequest.model_validate_json(request_bytes, strict=True)
+        result = _RunnerResult.model_validate_json(result_bytes, strict=True)
     except ValueError as error:
         raise E2ERunnerError("bundle request or result is invalid") from error
     signal_snapshot_ids = sorted({item.snapshot_id for item in request.signals})
@@ -1029,17 +1018,18 @@ def verify_e2e_bundle(manifest_path: Path, *, runner_command: tuple[str, ...]) -
         if set(snapshot_manifests) != expected_snapshot_ids:
             raise E2ERunnerError("bundle snapshots do not cover factor provenance")
 
-    replay = subprocess.run(
-        runner_command,
-        input=request_path.read_bytes(),
-        capture_output=True,
-        check=False,
-    )
-    if replay.returncode != 0 or replay.stdout != result_path.read_bytes():
+    try:
+        replayed = _native.run_event(request_bytes)
+    except ValueError as error:
+        raise E2ERunnerError(f"Rust replay failed: {error}") from error
+    if replayed != result_bytes:
         raise E2ERunnerError("persisted result differs from authoritative Rust replay")
 
+    del request_bytes, result_bytes, replayed
+
+    report_input_path, _, report_input_bytes = verified_file("report_input")
     try:
-        report_input = json.loads(report_input_path.read_text(encoding="utf-8"))
+        report_input = json.loads(report_input_bytes.decode("utf-8"))
     except (OSError, ValueError) as error:
         raise E2ERunnerError("report input is invalid") from error
     legacy_report_keys = {
@@ -1146,7 +1136,8 @@ def verify_e2e_bundle(manifest_path: Path, *, runner_command: tuple[str, ...]) -
             exposures=exposures,
             annual_sessions=annual_sessions,
         )
-        if rebuilt.read_bytes() != report_path.read_bytes():
+        report_path, report_sha256, report_bytes = verified_file("report")
+        if rebuilt.read_bytes() != report_bytes:
             raise E2ERunnerError("report differs from authoritative rebuild")
 
     if (

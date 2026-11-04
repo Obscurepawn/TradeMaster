@@ -17,7 +17,6 @@ def main() -> None:
     )
     parser.add_argument("--data-root", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, required=True)
-    parser.add_argument("--runner", type=Path, required=True)
     parser.add_argument("--start", type=date.fromisoformat, default=date(2016, 8, 12))
     parser.add_argument("--end", type=date.fromisoformat, default=date(2026, 8, 11))
     parser.add_argument("--initial-cash", type=int, default=500_000)
@@ -32,7 +31,6 @@ def main() -> None:
     outcome = run_real_strategy(
         data_root=args.data_root,
         output_root=args.output_root,
-        runner_command=(str(args.runner.resolve()),),
         config=RealStrategyConfig(
             start=args.start,
             end=args.end,

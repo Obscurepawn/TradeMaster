@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 300" width="960" height="300" role="img" aria-labelledby="title desc">
+  <title id="title">One round trip in three trading sessions</title>
+  <desc id="desc">Synthetic account value at the close on January 2, 3 and 6, 2025: CNY 2,000, 2,093.99 and 2,087.32. The two fills generate a price gain of 100 and cost 12.68 in fees, tax and slippage.</desc>
+  <style>
+    text{font-family:system-ui,"DejaVu Sans",sans-serif;fill:#182f32}
+    .small{font-size:14px;fill:#51676a}.num{font-size:18px;font-weight:650}
+    .axis{font-size:13px;fill:#54696b}.row{font-size:16px}
+  </style>
+  <rect width="960" height="300" rx="14" fill="#f3f7f5"/>
+  <text x="28" y="37" font-size="25" font-weight="700">One round trip in three trading sessions</text>
+  <text x="29" y="61" class="small">Synthetic example · January 2025 · Account value at the close (CNY)</text>
+  <g stroke="#ccd9d5" stroke-dasharray="3 5">
+    <path d="M78 108H575 M78 165H575 M78 222H575"/>
+  </g>
+  <g class="axis" text-anchor="end"><text x="70" y="113">2,100</text><text x="70" y="169">2,050</text><text x="70" y="226">2,000</text></g>
+  <path d="M116 222L325 114.85L540 122.46" stroke="#197562" stroke-width="3.5" fill="none"/>
+  <g fill="#197562" stroke="#fff" stroke-width="2.5"><circle cx="116" cy="222" r="6"/><circle cx="325" cy="114.85" r="6"/><circle cx="540" cy="122.46" r="6"/></g>
+  <g class="num" text-anchor="middle"><text x="116" y="202">2,000.00</text><text x="325" y="99">2,093.99</text><text x="540" y="105">2,087.32</text></g>
+  <g class="axis" text-anchor="middle">
+    <text x="116" y="255">JAN 02</text><text x="325" y="255">JAN 03</text><text x="540" y="255">JAN 06</text>
+    <text x="116" y="278">Cash only</text><text x="325" y="278">Buy 100 at 10.00</text><text x="540" y="278">Sell 100 at 11.00</text>
+  </g>
+  <rect x="615" y="84" width="320" height="188" rx="9" fill="#fff" stroke="#d4e0dd"/>
+  <text x="638" y="114" font-size="17" font-weight="650">What the account earned</text>
+  <g class="row"><text x="638" y="149">Price gain</text><text x="911" y="149" text-anchor="end">+100.00</text><text x="638" y="180">Fees, tax and slippage</text><text x="911" y="180" text-anchor="end">−12.68</text></g>
+  <path d="M638 201H911" stroke="#d3dedb"/>
+  <text x="638" y="235" class="num">Net gain</text><text x="911" y="235" text-anchor="end" class="num">+87.32</text>
+</svg>

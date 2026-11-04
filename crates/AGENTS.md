@@ -1,9 +1,15 @@
 # Rust Workspace Guide
 
-Rust owns authoritative execution semantics. Keep domain records immutable,
-failures typed, ordering deterministic, and ledger mutations atomic. Crates may
-depend on `tm-core`; `tm-core` must not depend on higher-level crates.
+Rust implements the trading rules used to execute orders and update accounts.
+Keep domain records immutable, use typed errors, and make event ordering
+deterministic and ledger updates atomic. Other crates can depend on `tm-core`.
+Keep dependencies on higher-level crates out of `tm-core`.
 
-All public behavior starts with a failing integration or property test. Run
-`cargo fmt --check`, workspace Clippy with `-D warnings`, and workspace tests
-before milestone handoff.
+Start each change to public behavior with a failing integration or property
+test. From the repository root, run these workspace checks before handoff:
+
+```bash
+cargo fmt --all --check
+cargo clippy --locked --workspace --all-targets -- -D warnings
+cargo test --locked --workspace
+```

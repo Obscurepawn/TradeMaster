@@ -1,66 +1,45 @@
-# 开源仓库发布整理
+# Open-source repository publication
 
-Status: complete
-Owner: Codex
-Updated: 2026-08-24
+- Status: complete
+- Owner: Codex
+- Updated: 2026-08-24
 
-## 目标
+## Release scope
 
-把当前本地TradeMaster实现整理为可安全发布到GitHub `main`的开源仓库基线：保留源码、测试、
-公共架构文档和开发规格，排除数据、回测产物、外部调研仓库、密钥、虚拟环境和构建缓存；提供
-符合常见开源项目结构的README与Apache-2.0许可证，并在验证后提交和推送。
+Publish the local TradeMaster implementation to GitHub `main`. The baseline includes source, tests, shared schemas, public architecture and usage documentation, development specifications, lockfiles, and package metadata. The release work changes how the project is distributed. Backtesting, factor and trading behavior are outside its scope.
 
-## 范围
+- Group the root `.gitignore` rules by data and artifacts, language toolchains, test caches, IDE and OS files, and credentials.
+- Provide a root `README.md` covering purpose, capabilities, architecture, repository layout, installation, configuration, usage, verification, limitations and licensing. Include two editable SVGs covering the architecture and end-to-end data flow, checked at high resolution. Identify Tushare as the only external data provider and distinguish it from local runtime dependencies.
+- Add the full Apache License 2.0 to `LICENSE`, consistent with the Rust workspace. Complete Python README and license metadata.
+- Audit the publication candidates for credentials, ignored material and oversized files. Push the verified commit to `origin/main` by fast-forward.
 
-- 重构根`.gitignore`，按数据/产物、语言工具链、测试缓存、IDE/OS和密钥分类；
-- 新增根`README.md`，覆盖定位、能力、架构、目录、安装、配置、使用、验证、限制和License；
-- README嵌入两张经高分辨率验收的可编辑SVG：系统架构图与端到端数据流图；
-- 外部依赖章节明确当前唯一数据源为Tushare，并区分本地运行依赖与外部服务；
-- 新增标准Apache License 2.0全文`LICENSE`，与Rust workspace现有声明保持一致；
-- 补齐Python package的README/license metadata；
-- 审计待提交文件、忽略效果、密钥和大文件；
-- 创建一个非force提交并推送到`origin/main`。
+## Repository rules
 
-## 非目标
+Keep Tushare tokens, `.env` and other credentials out of the Git index and history. Exclude provider data, backtest artifacts, build caches, virtual environments, candidate repositories in `research/`, and internal evidence with local paths in `docs/research/`. Retain local data and artifacts on disk. Publish `Cargo.lock` and `uv.lock` for reproducibility, together with the source, schemas, tests, public docs, `AGENTS.md` and `specs/`. Verify that local `main` is based on the latest `origin/main` before pushing. The release preserves history and uses ordinary fast-forward updates.
 
-- 不提交`research/`候选仓库、`docs/research/`内部调研证据、Tushare数据、回测artifact或构建产物；
-- 不重写Git历史、不force push、不删除本地数据或产物；
-- 不改变回测、因子或交易运行时行为。
-
-## 不变量
-
-- Tushare token和任何`.env`/credential文件不得进入Git index或提交历史；
-- `Cargo.lock`与`uv.lock`作为可复现应用锁文件纳入版本控制；
-- `AGENTS.md`、`specs/`、源码、schemas、测试和公开docs纳入版本控制；
-- push前必须确认本地`main`基于最新`origin/main`，提交内容不含超大文件或被忽略数据；
-- 远端更新使用普通fast-forward push，禁止force。
-
-## 任务
+## Tasks
 
 | Task | Owner | Status | Evidence |
-|---|---|---|---|
-| 审计live Git状态、license与公开边界 | Codex | completed | main/origin均为fd656a0；仅.gitignore已跟踪 |
-| 整理.gitignore并验证ignore contracts | Codex | completed | 大数据/产物/研究仓库/缓存均命中规则 |
-| 编写README/LICENSE及package metadata | Codex | completed | README、2 SVG、Apache-2.0、wheel metadata |
-| 运行安全、文档、构建和测试门禁 | Codex | completed | 248 Python + Rust/static/package/docs/security PASS |
-| 提交并push origin/main | Codex | completed | baseline `7b12346` fast-forward pushed |
+| --- | --- | --- | --- |
+| Audit Git state, licensing and publication scope | Codex | completed | Local and remote main started at `fd656a0` with only `.gitignore` tracked. |
+| Organize ignore rules and verify the exclusions | Codex | completed | Large data, artifacts, research repositories and caches matched their rules. |
+| Write README, license and package metadata | Codex | completed | README, two SVGs, Apache-2.0 and wheel metadata. |
+| Run security, documentation, build and test checks | Codex | completed | 248 Python tests passed, along with Rust, static, package, documentation and security checks. |
+| Commit and push to origin/main | Codex | completed | Baseline `7b12346` was pushed by fast-forward. |
 
-## 验收标准
+## Acceptance criteria
 
-- [x] `git status --short`只显示应公开的源码、测试、公共文档和仓库元数据；
-- [x] data/artifacts/research/docs-research/dist/target/venv/cache/secrets均被明确忽略；
-- [x] README中的命令、链接、架构和限制与live代码一致；
-- [x] 两张README SVG通过结构、渲染和局部裁图检查，缩放后文字与连线仍可读；
-- [x] Python/Rust package metadata均声明Apache-2.0且LICENSE全文存在；
-- [x] secret scan、大文件审计、Markdown链接检查、build/test/lint通过；
-- [x] 本地`main`提交后工作树干净，`origin/main`指向相同提交。
+- [x] `git status --short` contained only source, tests, public documentation and repository metadata intended for publication.
+- [x] Rules explicitly ignored data, artifacts, research, internal research docs, dist, target, virtual environments, caches and secrets.
+- [x] README commands, links, architecture and limitations matched the implementation.
+- [x] Both SVGs passed structural, rendering and crop inspection. Labels and connectors remained legible at different scales.
+- [x] Python and Rust package metadata declared Apache-2.0. The full license was present.
+- [x] Secret, file-size, Markdown link, build, test and lint checks passed.
+- [x] The working tree was clean after the local main commit, and remote main pointed to the same commit.
 
-## Decisions
+## Release decisions
 
-- License沿用`Cargo.toml`已经声明的Apache-2.0，避免双重或冲突许可。
-- 公开文档包含`docs/architecture`和通用使用文档；带本机路径且面向内部证据的
-  `docs/research/`继续忽略。
-- 生成数据和报告不入Git；README提供可重复生成命令和本地输出目录约定。
+Use the Apache-2.0 license already declared in `Cargo.toml`. Publish `docs/architecture` and general usage guides. Keep `docs/research/` private to the workspace. Document how to regenerate data and reports and where the commands write them.
 
 ## Changed files
 
@@ -80,28 +59,22 @@ Updated: 2026-08-24
 - `docs/reviews/20260823-m9-full-a-quality-review.md`
 - `python/trademaster/strategies/industry_fundamental/README.md`
 
-## Current state
 
-- 当前`main`与`origin/main`均指向清空后的`fd656a0`，远端树只有`.gitignore`。
-- 本地完整实现均未跟踪；`data/`约3GB、`artifacts/`约8.1GB、`research/`约5.7GB、
-  `target/`约4.8GB、`.venv/`约504MB，必须保持在Git之外。
-- 当前公开候选155个文件，最大为`uv.lock`约245KB；未发现候选文件包含本地Tushare token。
+## Initial state
+
+The reset local and remote `main` branches both pointed to `fd656a0` with only `.gitignore` tracked. The implementation was untracked. The excluded directories occupied about 3 GB (`data/`), 8.1 GB (`artifacts/`), 5.7 GB (`research/`), 4.8 GB (`target/`) and 504 MB (`.venv/`). There were 155 candidate files. The largest was `uv.lock` at about 245 KB. The candidates contained no copy of the local Tushare token.
 
 ## Verification evidence
 
-- README：Pandoc GFM解析PASS；44个候选Markdown的相对链接全部存在且未指向ignored文件。
-- SVG：两图`validate-svg.sh`/`rsvg-convert` PASS；4000px整图与11个局部裁图完成视觉复核。
-- License/package：LICENSE与系统Apache-2.0全文`diff -w`一致；wheel metadata为
-  `License-Expression: Apache-2.0`并包含LICENSE，sdist包含README/LICENSE。
-- Security/repository：精确Tushare token与常见GitHub/AWS/private-key模式扫描PASS；155个候选
-  文件最大约245KB；本地大目录均由`git check-ignore -v`证明。
-- Python：真实token环境`248 passed in 87.44s`；Ruff、strict Mypy 44 source files、
-  compileall PASS。
-- Rust：fmt、Clippy `-D warnings`、workspace tests与doc tests PASS。
-- Package：`uv build` PASS；隔离venv重装wheel后两个CLI `--help` PASS。
-- Remote：基线提交`7b12346`已由普通fast-forward push发布到`origin/main`；最终spec闭环提交
-  后再次核验本地与远端commit一致。
+| Check | Result recorded at publication |
+| --- | --- |
+| Documentation | Pandoc parsed the README as GitHub Flavored Markdown. All relative links across 44 candidate Markdown files resolved to files eligible for publication. |
+| Diagrams | Both passed `validate-svg.sh` and `rsvg-convert`. The reviewer inspected 4000 px renders and 11 cropped details. |
+| License and package | `diff -w` matched the full system Apache-2.0 text. The wheel included `LICENSE` and reported `License-Expression: Apache-2.0`. The sdist included the README and license. |
+| Security and repository | Scans for the exact local Tushare token and common GitHub, AWS and private-key patterns passed. `git check-ignore -v` confirmed exclusions for the large directories. |
+| Python | With a real token, `248 passed in 87.44s`. Ruff, strict Mypy over 44 source files and compileall passed. |
+| Rust | Formatting, Clippy with `-D warnings`, workspace tests and doc tests passed. |
+| Packaging | `uv build` passed. A clean virtual environment could install the wheel and run both CLI `--help` commands. |
+| Remote | Published baseline `7b12346` by fast-forward. Local and remote commits were checked again after the final specification update. |
 
-## Open questions
-
-- 无；用户已明确授权整理、提交并push到`main`。
+No open questions remained. The user had authorized the cleanup, commit and push to `main`.

@@ -1,0 +1,40 @@
+# Factors, signals and strategies
+
+A factor answers a research question for one instrument and time, for example how strongly its price rose over a lookback window. A signal translates an observation into a desired weight or share count. The trading engine determines the actual fill. Changing a ranking rule belongs in Python. Changing whether an order can execute at a limit belongs in the execution model.
+
+The shared protocol `Factor.compute(FactorContext)` returns a table of values. `SignalGenerator.generate(SignalContext)` consumes factor values and the earliest permitted execution time. Python also defines `EventStrategy.on_bar(StrategyView) -> list[OrderIntent]` for event-oriented callers. The daily snapshot callback instead returns target weights from a `DecisionDay`. [Shared contracts](../../python/trademaster/contracts.py) · [Snapshot callback](snapshot-backtest.md)
+
+## Calculate and save a factor
+
+`FactorExecutor` runs a factor against an Arrow input table and a `FactorContext` carrying the as-of time and data snapshot. A managed materialization also records the definition, input tables, scope and parent materializations. Consequently a repeated evaluation can reuse saved values, while a change in inputs identifies a different materialization. [Factor guide](../factor-management.md) · [Contribution rules](../../python/trademaster/factors/AGENTS.md)
+
+| Implementation | Interfaces and behavior |
+|---|---|
+| [factors package](../../python/trademaster/factors/__init__.py) | `FactorRegistry` resolves versioned definitions. `FactorExecutor` checks the output against `factor_output_schema()`. This file also implements momentum, value, close level and composite factors. |
+| [management.py](../../python/trademaster/factors/management.py) | `FactorDefinition` records identity, parameters and dependencies. `ManagedFactorRegistry` verifies registrations and resolves parent factors in dependency order. |
+| [storage.py](../../python/trademaster/factors/storage.py) | `FactorManager` materializes and verifies results. `FactorArtifact` pairs saved values with a `FactorMaterialization`. `FactorCatalog` supports discovery by scope and identity. |
+| [builtin.py](../../python/trademaster/factors/builtin.py) | `builtin_managed_factor_registry()` assembles the built-in executable definitions used by the CLI and strategies. |
+| [cross_section.py](../../python/trademaster/factors/cross_section.py) | `CrossSectionTransformSpec` and `CrossSectionCompositeFactor` control grouping, clipping, normalization, component directions, weights and missing data at each observation time. |
+| [fundamental.py](../../python/trademaster/factors/fundamental.py) | `fundamental_factor_suite()` builds value, quality, growth and balance-sheet definitions and their composite. |
+| [evaluation.py](../../python/trademaster/factors/evaluation.py) | `FactorEvaluator` aligns a materialization with explicit future-return labels, then calculates IC, rank IC, quantile returns and turnover. `FactorEvaluationStore` saves the outputs. |
+| [public_library.py](../../python/trademaster/factors/public_library.py) | Source, candidate and collection records preserve attribution, restrictions and implementation status. `PublicFactorStore` persists and verifies the catalog. |
+| [public_cn.py](../../python/trademaster/factors/public_cn.py) | `builtin_public_factor_library()` assembles the published A-share candidate catalog. A catalog entry can describe a formula that has no executable implementation. |
+| [public_factors.py](../../python/trademaster/factors/public_factors.py) | `public_executable_factor_suite()` binds reviewed Huatai and Guotai Junan implementations to their managed definitions. [Public library guide](../public-factor-library.md) |
+| [Command dispatcher](../../python/trademaster/factors/__main__.py) | Exposes definition discovery, parent graphs, materialization verification, evaluation and public library queries through `tm-factor`. |
+
+Tests cover [runtime schemas](../../tests/test_factor_interfaces.py), [dependency and cache identity](../../tests/test_factor_management.py), [fundamental directions and composites](../../tests/test_fundamental_managed_factors.py), [factor evaluation](../../tests/test_factor_evaluation.py), [public library records](../../tests/test_public_factor_library.py), [executable public formulas](../../tests/test_public_executable_factors.py), [factor CLI operations](../../tests/test_factor_cli.py) and [public factors against a local real cache](../../tests/test_public_factor_real_cache_e2e.py).
+
+## Turn observations into targets
+
+| Source | What the caller gets |
+|---|---|
+| [Signal generators](../../python/trademaster/signals/__init__.py) | `TopNTargetWeightGenerator` ranks an eligible cross-section. `ThresholdQuantitySignalGenerator` detects a crossing and produces a share target. Both consume `SignalContext` and return typed Arrow signal rows with a decision time and earliest execution time. [Signal contribution rules](../../python/trademaster/signals/AGENTS.md) |
+| [Strategy namespace](../../python/trademaster/strategies/__init__.py) and [strategy guide for contributors](../../python/trademaster/strategies/AGENTS.md) | Home of the first-party strategy packages. Data access, scoring, allocation and order execution have separate owners. |
+| [demo.py](../../python/trademaster/strategies/demo.py) | `cross_sectional_momentum`, `moving_average_cross` and `macd_cross` generate daily decisions from closes. Read the [strategy example](../examples/tushare-strategies.md) for warm-up periods, parameters and the distinction between keeping the current target and exiting to cash. |
+| [Industry public API](../../python/trademaster/strategies/industry_fundamental/__init__.py) and [module entry point](../../python/trademaster/strategies/industry_fundamental/__main__.py) | Stable imports and command for the managed-factor industry strategy. The [usage guide](../../python/trademaster/strategies/industry_fundamental/README.md) explains how the configuration selects the portfolio. [Package rules](../../python/trademaster/strategies/industry_fundamental/AGENTS.md) |
+| [Compatibility exports](../../python/trademaster/strategies/industry_fundamental_top5/__init__.py) and [argument parser](../../python/trademaster/strategies/industry_fundamental_top5/__main__.py) | Preserve the historical module name and ten-year run command. [Reproduction notes](../../python/trademaster/strategies/industry_fundamental_top5/README.md) · [Package rules](../../python/trademaster/strategies/industry_fundamental_top5/AGENTS.md) |
+| [selection.py](../../python/trademaster/strategies/industry_fundamental_top5/selection.py) | `IndustryFundamentalStrategy` converts eligible scored candidates into selections. `IndustryFundamentalConfig` sets industry and per-industry limits. The output includes exact target weights. |
+| [data.py](../../python/trademaster/strategies/industry_fundamental_top5/data.py) | `StrategyDataCache` binds request parameters to provider responses and saves raw or derived tables with their hashes. The full-market acquisition code reuses this cache. |
+| [real.py](../../python/trademaster/strategies/industry_fundamental_top5/real.py) | `run_real_strategy(config=..., data_root=..., output_root=...)` assembles historical membership, point-in-time statements, factors, targets, runner input and the report. Inspect its settings to distinguish the historical-interval and static-membership experiments. |
+
+Use the [momentum and signal tests](../../tests/test_momentum_and_signals.py), [value/composite and threshold tests](../../tests/test_value_composite_threshold.py), [point-in-time regression cases](../../tests/test_m2_review_regressions.py) and [data-to-signal integration](../../tests/test_factor_signal_data_integration.py) when changing a public signal. Strategy-specific checks cover [demo crossovers](../../tests/test_demo_strategies.py), [industry ranking and allocation](../../tests/test_industry_fundamental_top5.py) and [the industry data cache](../../tests/test_fundamental_strategy_data_cache.py).

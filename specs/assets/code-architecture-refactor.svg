@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="1088" viewBox="0 0 600 1088" role="img" aria-labelledby="title desc" lang="en">
+  <title id="title">How a daily snapshot backtest trades</title>
+  <desc id="desc">At a scheduled close Python reads the account, fills and published data and returns its next target. Rust settles lots and sizes orders from prior closes and cash. It checks the orders at the open, posts fills and values the account at the close. Daily equity and target outcomes are available in the summary. Details include attempts and shortfall reasons.</desc>
+  <defs>
+    <style>
+      text { font-family: "DejaVu Sans", Arial, sans-serif; fill: #19333c; }
+      .title { font-size: 30px; font-weight: 700; }
+      .intro { font-size: 19px; fill: #405864; }
+      .label { font-size: 17px; font-weight: 700; letter-spacing: 0.4px; }
+      .name { font-size: 22px; font-weight: 700; }
+      .body { font-size: 18px; }
+      .edge { fill: none; stroke: #486c75; stroke-width: 2.4; stroke-linejoin: round; marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerUnits="userSpaceOnUse" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+      <path d="M0 0 9 4.5 0 9 2.5 4.5Z" fill="#486c75"/>
+    </marker>
+  </defs>
+  <rect width="600" height="1088" fill="#fbfcfa"/>
+    <text x="26" y="43" class="title">How a snapshot backtest trades</text>
+    <text x="27" y="74" class="intro">One Rust ledger runs inside Python from open to close.</text>
+  <g id="snapshot">
+    <rect x="26" y="94" width="548" height="120" rx="10" fill="#f8f2e7" stroke="#c8b69b" stroke-width="1.4"/>
+    <text x="42" y="123" class="label">SHARED INPUT</text>
+    <text x="42" y="153" class="name">Snapshot</text>
+    <text x="42" y="179" class="body">Sessions, trading rules, raw prices and opening status.</text>
+    <text x="42" y="203" class="body">Research features carry their publication times.</text>
+  </g>
+  <g id="input-routes">
+    <path d="M269 214 V242" class="edge"/>
+    <path d="M549 214 H585 V453 H564" class="edge"/>
+  </g>
+  <g id="decisions">
+    <rect x="43" y="244" width="520" height="123" rx="10" fill="#ecf3f8" stroke="#adbfcb" stroke-width="1.4"/>
+    <text x="59" y="273" class="label">PYTHON  ·  DECISION CLOSE</text>
+    <text x="59" y="304" class="name">Set the target portfolio</text>
+    <text x="59" y="332" class="body">Use closing prices, published factors, holdings and fills.</text>
+    <text x="59" y="357" class="body">Return weights for the next open, or use dated targets.</text>
+  </g>
+  <g id="targets">
+    <path d="M269 367 V397" class="edge"/>
+  </g>
+  <g id="pre-open">
+    <rect x="43" y="399" width="520" height="146" rx="10" fill="#ecf5ef" stroke="#a2b9a9" stroke-width="1.4"/>
+    <text x="59" y="428" class="label">RUST  ·  BEFORE THE OPEN</text>
+    <text x="59" y="459" class="name">Settle lots and size orders</text>
+    <text x="59" y="486" class="body">Unlock eligible lots. Use prior closes and settled cash.</text>
+    <text x="59" y="511" class="body">Reserve cash for the uninvested weight. Budget buys</text>
+    <text x="59" y="535" class="body">in whole lots, including fees at the buy price cap.</text>
+  </g>
+  <g id="planned-orders">
+    <path d="M269 545 V575" class="edge"/>
+  </g>
+  <g id="opening">
+    <rect x="43" y="577" width="520" height="116" rx="10" fill="#ecf5ef" stroke="#a2b9a9" stroke-width="1.4"/>
+    <text x="59" y="606" class="label">RUST  ·  OPEN</text>
+    <text x="59" y="637" class="name">Match the planned orders</text>
+    <text x="59" y="663" class="body">Check side permission, buy cap and cash reserve.</text>
+    <text x="59" y="686" class="body">Fill at the open or record the reason for a shortfall.</text>
+  </g>
+  <g id="to-ledger">
+    <path d="M269 693 V723" class="edge"/>
+  </g>
+  <g id="closing">
+    <rect x="43" y="725" width="520" height="118" rx="10" fill="#ecf5ef" stroke="#a2b9a9" stroke-width="1.4"/>
+    <text x="59" y="754" class="label">RUST  ·  ACCOUNT</text>
+    <text x="59" y="785" class="name">Post fills and value the close</text>
+    <text x="59" y="811" class="body">Post trades and fees. Value positions at closing prices.</text>
+    <text x="59" y="835" class="body">Sales add to the next session’s opening buy budget.</text>
+  </g>
+  <g id="next-session">
+    <path d="M43 779 H19 V309 H41" class="edge"/>
+    <path d="M269 843 V871" class="edge"/>
+  </g>
+  <g id="result">
+    <rect x="26" y="873" width="548" height="192" rx="10" fill="#fff" stroke="#bbcbce" stroke-width="1.4"/>
+    <text x="42" y="903" class="label">PYTHON  ·  BACKTEST RESULT</text>
+    <text x="42" y="933" class="name">Daily equity and batch outcomes</text>
+    <text x="42" y="961" class="body">The summary gives return, costs, coverage and counts</text>
+    <text x="42" y="985" class="body">of reached, expired and replaced targets.</text>
+    <text x="42" y="1022" class="name">Detailed output</text>
+    <text x="42" y="1051" class="body">Attempts, shortfall reasons, orders, fills and positions.</text>
+  </g>
+</svg>

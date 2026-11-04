@@ -1,83 +1,50 @@
-# M2 因子与信号层实施规格
+# M2 factor and signal layer
 
 Status: completed
 Owner: Codex
 
-## 目标与边界
+## Scope
 
-M2 在 M1 的不可变 PIT snapshot 之上实现基础因子管理、因子计算和两类策略信号：
+M2 builds factor registration and computation on M1 point-in-time (PIT) data snapshots. It supports two uses. At each rebalance, a cross-sectional strategy ranks the market, selects the top N instruments, and emits target weights. A stock or ETF strategy uses one instrument's time series to identify buy and sell signals and set its target quantity. The M3 Rust engine handles cash, positions, T+1 lots, suspensions, and price limits.
 
-1. 全市场横截面选股：按调仓时点计算因子，选择 Top-N，并产生目标权重信号；
-2. 单股票/ETF 买卖点：按单标的时间序列规则产生目标数量或买卖方向信号。
+## Public interfaces
 
-M2 不维护现金、持仓、T+1 lot，也不判断涨跌停/停牌；这些由 M3 Rust 规则与账本负责。
+- `FactorDefinition` specifies a stable `factor_id/version`, the datasets and fields it reads, the number of lookback sessions, and the meaning of the result.
+- `FactorRegistry` registers definitions and looks them up by ID and version. It rejects duplicate definitions and unknown dependencies.
+- `FactorExecutor.compute()` accepts an Arrow table that identifies its data snapshot. Rows must describe events that had occurred and data that was available by the specified cutoffs. The output identifies the same snapshot and contains `instrument_id,event_time,factor_id,factor_version,value,is_valid`.
+- `CrossSectionalSignalConfig` specifies top N, sort direction, minimum valid sample, equal or explicit weights, and the next eligible execution time.
+- `SingleAssetSignalConfig` specifies the instrument, buy and sell thresholds or rules, target quantity, and next eligible execution time.
+- Both generators emit rows with `signal_id,strategy_id,instrument_id,signal_time,eligible_execution_time,intent_type,value,reason,snapshot_id`. A signal based on today's close first becomes eligible at the next trading session (T+1), so `eligible_execution_time > signal_time`.
 
-## 公共接口先行
+## Factors and generators
 
-- `FactorDefinition`：稳定 `factor_id/version`、依赖 dataset/fields、lookback sessions、输出语义。
-- `FactorRegistry`：注册、按 ID/version 查找、重复和未知依赖 fail closed。
-- `FactorExecutor.compute()`：只接受带 snapshot provenance 且 event/known cutoff 合法的 Arrow 输入；
-  输出固定 schema：`instrument_id,event_time,factor_id,factor_version,value,is_valid`，并继承 snapshot
-  provenance。
-- `CrossSectionalSignalConfig`：Top-N、升/降序、最少有效标的、等权/显式权重、下次可执行时间。
-- `SingleAssetSignalConfig`：目标 instrument、买卖阈值/规则、目标 quantity、下次可执行时间。
-- 两类 signal 均输出运行时可消费的稳定 schema：`signal_id,strategy_id,instrument_id,signal_time,
-  eligible_execution_time,intent_type,value,reason,snapshot_id`。收盘因子信号必须满足 T+1 event timing，
-  `eligible_execution_time > signal_time`。
+- `MomentumFactor` computes N-session momentum from adjusted prices ordered by instrument and event time. It marks insufficient history invalid and keeps each instrument's window separate.
+- `ValueFactor` uses PIT `daily_basic` fields `float_market_value` or `total_market_value` to produce a value suitable for ranking.
+- `CompositeFactor` supports winsorization, z-scores, component directions and weights, and an explicit policy for missing values.
+- `TopNTargetWeightGenerator` ranks a sufficient sample of valid values, breaks ties by `instrument_id`, and assigns equal weights that sum to exactly 1.00000000.
+- `ThresholdQuantitySignalGenerator` tests a single instrument for upward or downward crossings and emits a quantity intent. It can only read observations available at decision time.
 
-## 基础实现
+## Test and implementation sequence
 
-- `MomentumFactor`：以复权价格计算 N-session 动量，严格按 instrument/event time 排序，窗口不足为
-  invalid，不跨标的填充。
-- `ValueFactor`：基于 PIT `daily_basic` 的 `float_market_value` 或 `total_market_value` 产生可排序值。
-- `CompositeFactor`：对输入因子做可配置 winsorize、z-score、方向和权重组合；缺失策略显式配置。
-- `TopNTargetWeightGenerator`：有效样本数达标后稳定排序，tie-break 使用 `instrument_id`，等权之和
-  精确为 1.00000000。
-- `ThresholdQuantitySignalGenerator`：单标的因子上穿/下穿阈值产生 quantity intent；不直接读取未来行。
+1. Red. Test registry behavior, the fixed Arrow schema, snapshot provenance, cutoffs, and duplicate IDs.
+2. Green. Implement the registry, executor, and schema validator.
+3. Red. Hand-calculate momentum for three instruments. Cover short windows, sort order, ties, top-N weights, and T+1 timing.
+4. Green. Implement Momentum, Value, Composite, and cross-sectional signals.
+5. Red. Test a threshold series, ETF identity, duplicate times, future rows, and quantity intents.
+6. Green. Implement the single-instrument signal generator.
+7. Generate both kinds of signals from a real M1 Parquet/DuckDB snapshot and conduct one independent review.
 
-## TDD 顺序
+## Acceptance and results
 
-1. Red：registry、固定 Arrow schema、snapshot provenance、cutoff 与重复 ID 接口测试失败。
-2. Green：最小 registry/executor 和 schema validator。
-3. Red：手算 3 标的动量、窗口不足、排序/tie、Top-N 权重、T+1 timing。
-4. Green：Momentum/Value/Composite 与横截面信号。
-5. Red：单标的阈值序列、ETF identity、重复时间/未来行、quantity intent。
-6. Green：单标的 signal generator。
-7. 集成：使用 M1 真实 Parquet/DuckDB snapshot 计算因子并生成两类信号；一次有界 fresh review。
+To pass, the computed values and weights had to match the hand calculations, output tables had to retain their schema and identify their input snapshot, and signals based on closing data had to wait until the next session. Integration tests for stock selection and single-instrument/ETF signals both used Arrow tables from M1 data snapshots. The required checks included pytest, Ruff, strict mypy, and wheel/sdist builds. The broader system review was scheduled after the M6 end-to-end run.
 
-## 完成门禁
+M1 was complete when these tests ran. The M2 integration cases used real Parquet files, the DuckDB catalog, and a PIT snapshot to generate cross-sectional top-N and ETF buy signals. The test provider rejected all fetches, verifying that the local M1 objects supplied the data.
 
-- 手算因子与权重结果逐值一致；输出 schema/provenance 固定。
-- T 日收盘数据产生的信号最早 T+1 执行。
-- 横截面与单标的/ETF 两条集成链路均使用真实 Arrow + M1 snapshot。
-- Python pytest、Ruff、strict mypy、wheel/sdist 通过。
-- 一次 fresh-context 有界 review；高强度全局 review 延后到 M6 E2E 后。
-
-## 当前状态
-
-- M1 已完成。
-- Registry、Executor、固定 Arrow schema 与 provenance/cutoff 边界已完成 Red→Green。
-- Momentum、Value、Composite、Top-N 等权信号、单标的/ETF threshold quantity 信号与 T+1
-  schedule 均已完成 Red→Green。
-- 真实 Parquet 文件、DuckDB catalog 与 PIT snapshot 集成测试已覆盖横截面 Top-N 和 ETF
-  买点信号；测试 provider 被设置为禁止回源，从而证明数据来自 M1 本地权威对象。
-
-## TDD 与验证证据
-
-- Red 1：`tests/test_factor_interfaces.py` 最初因 `trademaster.factors` 不存在而 collection
-  fail；随后实现 registry/executor/schema/provenance 边界。
-- Red 2：`tests/test_momentum_and_signals.py` 最初因 `MomentumFactor` 不存在而 collection
-  fail；随后实现逐标的 session lag、稳定 Top-N、精确 Decimal 等权与严格下一时点执行。
-- Red 3：`tests/test_value_composite_threshold.py` 最初因 `CompositeComponent` 不存在而
-  collection fail；随后实现市值因子、横截面 z-score 组合与单标的 crossing 信号。
-- Green focused：M2 四个测试文件共 11 passed；Ruff 与 strict mypy 通过。
-- Green full：注入本地凭证后 Python 全量 118 passed、0 skipped，包含真实 Tushare
-  `trade_cal` smoke；wheel/sdist 成功且 factors/signals、`py.typed` 与共享 schema 均打包。
-- 有界 fresh review：0 Critical、7 High；High 均为主接口/主链路问题，已一次性定点关闭，
-  未启动第二轮审查。
-- Review closure Red：新增/调整测试后 focused 首次为 10 failed、2 passed，分别锁定
-  execution timing、artifact enum、Protocol、stale crossing、factor identity、`known_at`
-  与 dependency validation。
-- Review closure Green：M2 focused 16 passed；注入本地凭证后的全量 Python 为
-  122 passed、0 skipped；Ruff、strict mypy（27 source files）、wheel/sdist 与
-  `git diff --check` 均通过，仓库内凭证精确匹配为 0。
+| Stage | Evidence |
+|---|---|
+| Red 1 | Collection of `tests/test_factor_interfaces.py` failed because `trademaster.factors` did not exist. The implementation added the registry, executor, schema, provenance, and cutoff checks. |
+| Red 2 | `tests/test_momentum_and_signals.py` could not import `MomentumFactor`. The fix added per-instrument session lags, stable top-N selection, exact Decimal equal weights, and execution at the next eligible time. |
+| Red 3 | `tests/test_value_composite_threshold.py` could not import `CompositeComponent`. The implementation added the market-value factor, cross-sectional z-score composite, and single-instrument threshold crossings. |
+| Initial Green | 11 tests passed across four focused files. Ruff and strict mypy passed. With local credentials, 118 Python tests passed, 0 skipped, including the real Tushare `trade_cal` smoke test. The wheel and sdist contained factors, signals, `py.typed`, and the shared schema. |
+| Independent review | 0 Critical and 7 High findings in the main interfaces and workflow. The team addressed them together without opening a second review. The new and revised regression tests initially gave 10 failed and 2 passed. They covered execution timing, artifact enums, Protocol conformance, stale crossings, factor identity, `known_at`, and dependency validation. |
+| Final Green | 16 focused tests passed. With local credentials, 122 Python tests passed, 0 skipped. Ruff, strict mypy (27 source files), wheel/sdist builds, and `git diff --check` passed. The repository contained 0 exact matches for the credential. |

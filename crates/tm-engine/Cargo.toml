@@ -10,3 +10,7 @@ rust-version.workspace = true
 tm-core.workspace = true
 thiserror.workspace = true
 time.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

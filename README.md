@@ -1,275 +1,169 @@
 # TradeMaster
 
-[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Rust](https://img.shields.io/badge/Rust-1.97%2B-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![License](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+TradeMaster is a Python and Rust backtesting toolkit for Chinese A-shares and ETFs. At each scheduled close, a Python strategy sees its holdings and recent fills and chooses portfolio weights. Rust uses the same daily snapshot to calculate orders, simulate fills and track the account after fees. Interactive HTML reports show returns against a benchmark, drawdowns and trading costs. The research tools evaluate factors across the historical A-share universe.
 
-面向A股研究的可复现因子与事件回测框架。TradeMaster使用Python完成Tushare数据采集、
-Point-in-Time（PIT）查询、因子管理、信号生成和报告；使用Rust完成权威事件循环、A股交易
-约束、成交和账本。
+[![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB)](https://www.python.org/) [![Rust 1.97+](https://img.shields.io/badge/Rust-1.97%2B-924514)](https://www.rust-lang.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue)](LICENSE)
 
-> 当前版本是research-first框架，不连接券商实盘，不提供投资建议。回测和因子统计不能保证
-> 未来收益。
+[Run the example](#run-the-example) · [Write a strategy](#write-a-strategy) · [Fifteen-year benchmark](#fifteen-year-benchmark) · [Backtest reports](#backtest-reports) · [Research a factor](#research-a-factor) · [Documentation](docs/README.md)
 
-## 核心能力
+## Run the example
 
-- **Cache-first数据链**：先用DuckDB证明本地覆盖，只在缺口处请求Tushare；原始事实以
-  内容寻址Parquet保存。
-- **全A横截面研究**：支持历史上市/退市股票池、周/月调仓研究、稠密交易session面板和
-  forward-return标签。
-- **单标的与ETF事件回测底座**：信号可以表达目标权重或精确数量，由同一Rust事件内核执行。
-- **A股交易规则**：T+1、停牌、涨跌停、100股整手、费用、滑点、拒单和过期均是显式合同。
-- **因子管理**：definition/version、依赖DAG、代码/参数hash、Parquet物化、DuckDB发现和
-  IC/RankIC/暴露/换手/容量评估。
-- **可审计报告**：生成JSON、Parquet、自包含HTML和Markdown，报告绑定输入manifest与hash。
-- **双路径研究模型**：Python提供向量化因子/信号与流式评估；不能向量化的交易逻辑通过
-  Rust事件循环回放。账户和成交始终只有一套权威实现。
+The account starts with 8,000 shares of A and CNY 20,000. On Friday the strategy picks B and keeps 20% of the account in cash. When A opens at its lower price limit on Monday, what can the account actually buy?
 
-## 系统架构
+From the repository root, use Python 3.12 or later, [uv](https://docs.astral.sh/uv/) and Rust 1.97 or later. The script creates its own four-day market snapshot.
 
-![TradeMaster系统架构](docs/architecture/trademaster-overview.svg)
-
-[查看可编辑SVG原图](docs/architecture/trademaster-overview.svg) ·
-[阅读详细架构说明](docs/architecture/overview.md)
-
-核心边界：
-
-- Python可以访问Tushare、Parquet和DuckDB，但不拥有权威账户；
-- Rust只消费冻结的市场事件和策略意图，不读取Tushare token或研究数据库；
-- `Fill`是唯一可以改变账本的事实，拒单和过期不会产生伪分录；
-- 正式运行绑定source snapshot、factor definition、signals、orders、fills、ledger和report。
-
-## 数据流转
-
-![TradeMaster端到端数据流](docs/architecture/trademaster-data-flow.svg)
-
-[查看可编辑SVG原图](docs/architecture/trademaster-data-flow.svg)
+```bash
+uv sync --locked
+uv run python specs/examples/blocked_rotation.py
+```
 
 ```text
-Tushare
-  -> immutable Parquet objects
-  -> DuckDB coverage/task catalog
-  -> PIT snapshot / dense session panel
-  -> Python factors and signals
-  -> Arrow / RunnerRequest
-  -> Rust event runtime
-  -> orders / fills / ledger / NAV
-  -> immutable bundle and reports
+Session     Cash (CNY)   Equity (CNY)
+2024-01-05   20,000.00     100,000.00
+2024-01-08   20,000.00      92,000.00
+2024-01-09   91,995.00      91,995.00
+2024-01-10   19,990.00      91,990.00
 ```
 
-## 外部依赖与支持边界
+Monday's sell order is rejected. Tuesday's sale brings in CNY 71,995 after fees. At Wednesday's open, Rust buys 3,600 shares of B at CNY 20. The remaining CNY 19,990 includes the cash reserve and the amount left after rounding the order to whole lots. The script saves the orders, fills and daily account in `artifacts/blocked-rotation/result.json`. [Walk through the four sessions](docs/examples/rebalance-comparison.md#a-blocked-sale)
 
-### 外部数据服务
+## Write a strategy
 
-| 依赖 | 当前状态 | 用途 | 配置 |
-|---|---|---|---|
-| [Tushare Pro](https://tushare.pro/) | **唯一支持的数据源** | A股/ETF行情、交易日历、状态、涨跌停、财务、指数与行业数据 | 环境变量`TUSHARE_TOKEN` |
+The example ranks the scores published by Friday's close. A target of 80% in B also tells Rust to exit A. An empty portfolio asks for cash. Returning `None` keeps the current target in effect.
 
-当前没有Wind、同花顺、聚宽、Qlib数据服务、交易所直连或券商API适配器。新增provider需要实现
-相同的request identity、分页、coverage、PIT availability和不可变证据合同，不能只转换字段名。
+```python
+from decimal import Decimal
+from math import isfinite
 
-Tushare接口受token积分、权限和频率限制。TradeMaster会区分权限阻塞、认证失败、无效请求和
-瞬时网络错误；完整缓存命中时不会调用provider。请遵守Tushare自己的服务条款和数据授权。
 
-### 本地运行依赖
+class WeeklyRotation:
+    def on_decision(self, day):
+        ranking = (
+            (-score, symbol)
+            for symbol, score in day.scores("rotation_score").items()
+            if score is not None and isfinite(score)
+        )
+        winner = min(ranking, default=None)
+        if winner is None:
+            return None
+        return {winner[1]: Decimal("0.80")}
+```
 
-| 依赖 | 最低版本/角色 |
-|---|---|
-| Python | 3.12；数据、因子、策略编排和报告 |
-| Rust | 1.97；`tm-core`、`tm-engine`和`tm-runner` |
-| DuckDB | 本地coverage目录、PIT查询和out-of-core评估 |
-| Apache Arrow / Parquet | 子系统交换与权威列式对象 |
-| Plotly | 自包含HTML可视化 |
-| `uv` | 推荐的Python环境、锁文件和构建工具 |
+To buy B only after the sale of A has cleared, run `uv run python specs/examples/blocked_rotation.py --strategy after-sale`. The daily callback checks `day.account.quantity("A")`. On Tuesday it sees the completed sale and requests 80% B for Wednesday.
 
-DuckDB、Arrow、Parquet和Plotly是本地库，不是额外外部数据源。
+The weekly example calls `backtest` with this strategy, a weekly schedule and the initial holding in A. The same API accepts a dated table of weights. [Strategy source](specs/examples/weekly_rotation.py) · [Complete call](specs/examples/blocked_rotation.py) · [Python API and cash-only example](docs/reference/snapshot-backtest.md)
 
-## 安装
+For a real-data comparison, replay weekly stock selection, moving-average timing and MACD timing on the same 98 Tushare sessions. The snapshot comparison shows which fills and daily balances changed under the new sizing rules. [Three-strategy guide](docs/examples/tushare-strategies.md) · [Compare both engines](docs/examples/rebalance-comparison.md) · [Python SDK timings](docs/examples/rebalance-comparison.md#python-sdk-before-and-after-the-native-extension)
+
+![Snapshot account values for weekly momentum, moving-average and MACD strategies on the same 98 Tushare sessions.](docs/examples/rebalance-equity.svg)
+
+## Fifteen-year benchmark
+
+A daily strategy reads the SSE 50 index (`000016.SH`) at the close and trades ChinaAMC SSE 50 ETF (`510050.SH`) at the next eligible open. It targets the ETF when the index is above its 200-close average and cash otherwise. The comparison buys and holds the same ETF. Both start with CNY 100,000, wait for 200 index closes and take cash distributions on the units they hold. The sample spans **3,644 trading sessions** from January 2011 through December 2025.
+
+| Strategy | Closing equity (CNY) | Total return | Maximum drawdown | Simulated fills | Repeat run |
+|---|---:|---:|---:|---:|---:|
+| SSE 50 moving average | 202,977.32 | +102.98% | −33.36% | 113 | 51.8 ms |
+| Buy and hold the ETF | 208,949.55 | +108.95% | −43.12% | 2 | 43.1 ms |
+
+![Cumulative P&L in CNY for SSE 50 timing and ETF buy-and-hold from 2011 through 2025. Both start at zero.](docs/examples/broad-etf-pnl.svg)
+
+Cumulative profit and loss (P&L) is each day’s closing account value minus the initial CNY 100,000. It includes cash dividends and changes in the value of ETF units still held, after trading fees.
+
+The first timing signal arrived at the close on Friday, February 24, 2012. On Monday the model bought 53,200 ETF units at the recorded open of CNY 1.847 and charged CNY 29.48. The model assumes small eligible orders fill in full at the opening price.
+
+Times are medians of nine full runs per strategy on a Ryzen 7 8845H under WSL2. Each repeat starts a new account on the open snapshot. Set `TUSHARE_TOKEN` for the one-time download, then rerun the saved inputs offline.
 
 ```bash
-git clone https://github.com/Obscurepawn/TradeMaster.git
-cd TradeMaster
-
-# Python运行与开发依赖
-uv sync --extra dev
-
-# Rust事件内核
-cargo build --release -p tm-runner
+uv run python -m trademaster.e2e.long_history prepare
+uv run python -m trademaster.e2e.long_history run --check docs/examples/broad-etf-reference.json
 ```
 
-安装Python wheel：
+[Data, dividends, costs and timing method](docs/examples/broad-etf.md) · [Strategy code](python/trademaster/e2e/long_history.py) · [Single-stock regression](docs/examples/long-history.md)
+
+## Backtest reports
+
+The event runner writes a standalone HTML report you can open offline. Zoom in on the return chart to compare the strategy with a benchmark, then inspect the drawdown over the same dates. The report also shows monthly returns, rolling volatility and Sharpe ratio, portfolio turnover and a breakdown of trading costs.
+
+![Two charts from the weekly momentum HTML report comparing cumulative returns and showing the strategy’s drawdown, January through May 2024.](docs/examples/momentum-report-preview.png)
+
+This report follows the weekly momentum strategy over 98 trading sessions. The return chart compares the strategy with buying and holding each of its five candidate stocks. The strategy finished up **4.67%**, with a maximum drawdown of **8.81%** and **CNY 696.06** in trading costs.
+
+With the example data prepared, run the command below and open `artifacts/demo-strategies/cross-sectional-momentum/report.html` in a browser. [Prepare the TuShare example data](docs/examples/tushare-strategies.md#run-the-examples)
 
 ```bash
-uv build
-uv pip install dist/trademaster-0.1.0-py3-none-any.whl
+uv run python -m trademaster.e2e.demo_strategies --engine events
 ```
 
-## 配置
+## Research a factor
 
-不要把token写入代码、YAML、Parquet、日志或Git。推荐只在当前shell导出：
-
-```bash
-export TUSHARE_TOKEN="your-token"
-```
-
-| 配置 | 入口 | 说明 |
-|---|---|---|
-| Tushare token | `TUSHARE_TOKEN`或`--token-env` | 仅provider边界读取 |
-| 数据根目录 | `--data-root` | Parquet对象、DuckDB目录和download plan |
-| 报告/运行输出 | `--output-root`、`--report-root` | 不可变artifact和可视化报告 |
-| 下载节流 | `--minimum-interval`、`--max-attempts` | API间隔和瞬时错误重试 |
-| 研究区间/标的 | plan、panel和strategy参数 | 日期、benchmark、horizon和universe |
-| Rust runner | `--runner`或stdin/stdout | `target/release/tm-runner` |
-
-本地`data/`、`artifacts/`、`logs/`、`.env*`和token文件均已被`.gitignore`排除。
-
-## 快速开始
-
-### 1. 查看已管理因子
+Inspect the built-in factor definitions and the local catalog from the same environment.
 
 ```bash
 uv run tm-factor list
 uv run tm-factor describe fundamental.roe@1
+uv run tm-factor library-sync
 uv run tm-factor library-status
 ```
 
-### 2. 创建可恢复的Tushare研究计划
-
-先用较短区间验证权限和配额；全A长周期下载会产生大量API请求和本地数据。
+For a study across the A-share universe, set `TUSHARE_TOKEN` in your shell before creating a download plan. The planner reads the trading calendar and instrument list from Tushare Pro. Later runs reuse verified local data.
 
 ```bash
-uv run tm-research-full-a \
-  --data-root data/research/demo \
-  plan \
-  --start 2024-01-01 \
-  --end 2024-12-31 \
-  --statement-start 2023-01-01
+uv run tm-research-full-a --data-root data/research/demo plan \
+  --start 2024-01-01 --end 2024-12-31 --statement-start 2023-01-01
 ```
 
-命令输出JSON中的`plan_sha256`是后续步骤的不可变计划身份：
+Use the printed `plan_sha256` to fetch the first batch. Running the download command again resumes the same plan.
 
 ```bash
-export TM_PLAN_SHA="<plan_sha256>"
-
-uv run tm-research-full-a \
-  --data-root data/research/demo \
-  download \
-  --plan-sha256 "$TM_PLAN_SHA" \
-  --max-tasks 100
-
-uv run tm-research-full-a \
-  --data-root data/research/demo \
-  status \
-  --plan-sha256 "$TM_PLAN_SHA"
+uv run tm-research-full-a --data-root data/research/demo download \
+  --plan-sha256 "<plan_sha256>" --max-tasks 100
+uv run tm-research-full-a --data-root data/research/demo status \
+  --plan-sha256 "<plan_sha256>"
 ```
 
-重复执行`download`会从未完成task继续；已经验证的请求不会再次访问Tushare。
+After the plan completes, use `materialize` to build the stock-by-day table and `evaluate` to compare factors by holding period. The research guide includes the full commands, forward-return definitions, and examples of rank correlation, turnover and trading capacity. [Full A-share research guide](docs/full-a-factor-research.md)
 
-### 3. 构造全A研究面板
+## How it works
+
+A **data snapshot** records prices, trading permissions and the publication times of strategy inputs. A point-in-time query selects records published by the decision cutoff. If Friday's cutoff is the close, a statement released that evening first enters a later decision.
+
+```mermaid
+flowchart TD
+    snapshot["Daily snapshot"] -->|Published prices and scores| strategy["Python strategy"]
+    strategy -->|Portfolio weights| engine["Rust sizing and execution"]
+    snapshot -->|Daily prices and opening status| engine
+    engine -->|Fills and fees| ledger["Cash, positions and closing equity"]
+    ledger -->|Account and recent fills at scheduled closes| strategy
+```
+
+[Detailed daily execution diagram](specs/assets/code-architecture-refactor.svg) · [Replay the three-session event example](docs/reference/execution.md#replay-the-three-session-example)
+
+| Question | Where to start |
+|---|---|
+| Which factors can I run, and what data do they need? | [Factor management](docs/factor-management.md) and [public factor library](docs/public-factor-library.md) |
+| How do I run the industry rotation strategy? | [Industry strategy guide](python/trademaster/strategies/industry_fundamental/README.md) |
+| Why was an order rejected? | Inspect the runner result. The [runtime guide](docs/architecture/overview.md) explains order checks, execution and settlement. |
+| How can I reproduce a report? | The event bundle links source data, factor versions and trades to the report. A daily snapshot run saves a request and ledger result for [replay](docs/reference/snapshot-backtest.md#save-and-replay). |
+| How does a target become a trade? | Follow a target from the Python decision to the Rust ledger in [Code Architecture Refactoring and Optimization](specs/20261104-code-architecture-refactor.md). |
+
+The daily execution model accounts for lot sizes, suspensions, price limits, settlement delays, commission, tax and slippage. Factor reports measure price changes over a chosen period. Strategy reports use actual simulated fills, including delayed exits. The opening execution model fills an eligible small order at the observed open and applies the configured costs.
+
+The industry strategy uses adjusted prices for trades and valuations. Its guide describes how it handles a missing daily bar, cash dividends and splits. [Industry strategy accounting](python/trademaster/strategies/industry_fundamental_top5/README.md)
+
+## Development
+
+Python research code lives in [python/trademaster](python/trademaster). Rust types and schemas live in [tm-core](crates/tm-core), execution and accounting in [tm-engine](crates/tm-engine), the Python extension in [tm-python](crates/tm-python), and saved-request decoding in [tm-runner](crates/tm-runner). Find individual files in the [repository and test map](docs/reference/repository.md) and command options in the [command reference](docs/reference/commands.md).
 
 ```bash
-uv run tm-research-full-a \
-  --data-root data/research/demo \
-  materialize \
-  --plan-sha256 "$TM_PLAN_SHA" \
-  --output-root artifacts/research/demo/panel \
-  --observation-frequency month_end \
-  --horizons 1,5,20,60
-```
-
-记录输出的`manifest_sha256`，再运行流式因子评估：
-
-```bash
-export TM_PANEL_SHA="<panel_manifest_sha256>"
-
-uv run tm-research-full-a \
-  --data-root data/research/demo \
-  evaluate \
-  --plan-sha256 "$TM_PLAN_SHA" \
-  --panel-output-root artifacts/research/demo/panel \
-  --panel-manifest-sha256 "$TM_PANEL_SHA" \
-  --factor-manifest-kind public \
-  --report-root artifacts/research/demo/public-factor-report \
-  --horizons 1,5,20,60
-```
-
-### 4. 调用Rust事件运行时
-
-`tm-runner`从stdin读取严格JSON `RunnerRequest`，并把运行结果写到stdout：
-
-```bash
-target/release/tm-runner < runner-request.json > runner-result.json
-```
-
-请求必须满足共享schema、UTC时间、稳定排序、instrument和snapshot identity。Python E2E客户端
-会负责构造请求、验证结果并生成bundle；协议细节见[schemas说明](schemas/README.md)。
-
-## 仓库结构
-
-```text
-TradeMaster/
-├── python/trademaster/   # 数据、PIT、因子、策略、E2E与报告
-├── crates/
-│   ├── tm-core/          # 精确类型、共享合同和artifact schema
-│   ├── tm-engine/        # A股规则、成交、事件循环与账本
-│   └── tm-runner/        # JSON stdin/stdout运行边界
-├── schemas/              # 跨语言schema与wire说明
-├── tests/                # Python合同、回归、真实cache与E2E测试
-├── docs/                 # 公开架构、因子和全A研究文档
-├── specs/                # 持久化里程碑规格与决策记录
-├── Cargo.toml            # Rust workspace
-└── pyproject.toml        # Python package与CLI
-```
-
-大规模市场数据、回测产物和外部框架调研仓库不提交到Git；它们分别位于本地`data/`、
-`artifacts/`和`research/`。
-
-## 验证
-
-```bash
-# Python
+uv sync --locked --extra dev
 uv run pytest -q
 uv run ruff check python tests
 uv run mypy --strict python
-
-# Rust
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-
-# Package
 uv build
 ```
 
-需要真实Tushare的测试从环境变量读取token；缓存完整性测试可以在不访问网络的情况下运行。
-
-## 文档
-
-- [详细运行时架构](docs/architecture/overview.md)
-- [因子管理与评估](docs/factor-management.md)
-- [全A研究链路](docs/full-a-factor-research.md)
-- [公开因子库状态](docs/public-factor-library.md)
-- [开发规格索引](specs/INDEX.md)
-- [Agent协作规范](AGENTS.md)
-
-## 当前限制
-
-- 正式数据provider目前只有Tushare；港股和美股只预留市场policy接口，尚未完成数据适配。
-- 当前执行模型是日频/bar级，不模拟逐笔成交、订单簿排队或市场冲击曲线。
-- Rust公司行动、拆并股和现金分红事件仍需增强；连续复权价策略只能作为研究近似。
-- 历史行业、ST和部分状态数据受Tushare权限与源历史限制；正式运行遇到无法证明的缺口会
-  fail closed。
-- 因子forward return是研究标签，不等于经过涨跌停、停牌和退出延迟回放的策略收益。
-
-## 参与开发
-
-1. 阅读根[AGENTS.md](AGENTS.md)和[specs/INDEX.md](specs/INDEX.md)；
-2. 行为变更先冻结公开合同并使用Red-Green-Refactor；
-3. 保持Parquet权威、DuckDB只作目录，避免把未来信息回填到PIT研究；
-4. 提交前运行相关Python/Rust门禁，并同步README、docs和spec。
-
-欢迎通过Issue或Pull Request提交可复现问题、数据契约改进和新市场适配。
-
-## License
-
-TradeMaster基于[Apache License 2.0](LICENSE)发布。
+The Python wheel includes the Rust engine and shared schemas. To replay a saved request, use `uv run tm-replay path/to/request.json`. Tests that require live Tushare access or a particular local data cache specify those requirements. [Contributor guide](AGENTS.md) · [Apache 2.0 license](LICENSE)

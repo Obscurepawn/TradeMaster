@@ -1,6 +1,7 @@
 # Architecture Documentation Guide
 
-Architecture documents describe approved runtime boundaries and evidence-backed
-invariants. Keep static components, dynamic sequences, and data transformations
-separate. Update diagrams and interface references together when a public
-contract changes.
+Describe the responsibilities of each component in the approved architecture.
+Use code or tests to support claims about current behavior. Mark planned
+changes clearly. Document component relationships, the order of calls, and
+data transformations separately. When a public interface changes, update its
+reference and diagrams together.

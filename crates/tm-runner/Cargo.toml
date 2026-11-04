@@ -18,7 +18,3 @@ tm-engine.workspace = true
 [lib]
 name = "tm_runner"
 path = "src/lib.rs"
-
-[[bin]]
-name = "tm-runner"
-path = "src/main.rs"

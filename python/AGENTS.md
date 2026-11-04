@@ -1,25 +1,26 @@
-# Python Layer Guide
+# Python layer
 
-Python owns provider adapters, PIT queries, factors, signal generation, user
-strategy adapters, CLI orchestration, and reporting. It does not implement an
-independent cash/position engine.
+Python handles provider adapters, point-in-time (PIT) queries, factors, signals,
+strategy adapters, CLI commands and reports. Rust maintains cash and positions.
+Research and factor code exchange Arrow tables. The daily snapshot SDK writes
+feature Parquet and a fixed-point JSON market file. The native extension opens the verified market and runs the Rust ledger. At
+each scheduled close the Python strategy reads the account and returns weights. Access
+providers through typed protocols. Tests use real DuckDB and Parquet and fake
+providers that implement the same protocols.
 
-Use Arrow tables at subsystem and Rust boundaries. Provider calls are isolated
-behind typed protocols; tests use real DuckDB/Parquet and contract-faithful
-provider fakes.
+Store factor values and evaluation tables in immutable Parquet files. DuckDB
+indexes them for discovery. Keep forward-return labels out of signals. Each
+label records its entry and exit times, alignment rule and source snapshot.
 
-Managed factor values and evaluation tables are immutable Parquet. Their DuckDB
-catalog is discovery-only. Forward-return labels require explicit entry/exit times,
-alignment and label snapshot provenance and never enter signal generation.
+Use `trademaster.research` for twenty-year studies of all A shares. Its download
+plan tracks tasks for the historical universe and the evidence needed to resume
+downloads. Compute and evaluate factors out of core with DuckDB and Arrow.
+Build the panel for the full historical universe before any strategy selection.
+The CLI still uses `StrategyDataCache` for cache-first provider access. Put new
+shared data interfaces in `trademaster.data` and research interfaces in the
+research package.
 
-Twenty-year full-A research is orchestrated under `trademaster.research`. Its
-download plan owns dynamic historical-universe tasks and resumable provider evidence;
-factor computation and evaluation remain out-of-core in DuckDB/Arrow. Do not route
-the full-universe panel through a strategy's post-selection universe. The current CLI
-still reuses the compatibility `StrategyDataCache` as the cache-first provider object
-adapter; common protocols already live under `trademaster.data`, and new research
-contracts must not be added to the legacy strategy package.
-
-Full-A completed evidence binds task/evidence/Parquet request identity and is handed to
-builders through a typed immutable snapshot. Financial date-only announcements become
-available on the next eligible session; unknown-time revisions cannot backfill history.
+For each completed task, verify that its request matches the evidence record and
+Parquet metadata. Give builders a typed, immutable snapshot of completed tasks.
+Treat date-only financial announcements as available in the next eligible
+session. A revision with no publication time cannot change earlier observations.

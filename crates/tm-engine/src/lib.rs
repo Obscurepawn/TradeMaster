@@ -1,6 +1,9 @@
 //! Event runtime interfaces.
 
+pub mod snapshot;
+
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -498,6 +501,23 @@ impl FeeSchedule for CnFeeSchedule {
         quantity: Quantity,
         price: Fixed8,
     ) -> Result<TransactionCostQuote, ExecutionError> {
+        self.quote_side(
+            instrument,
+            order.submitted_order().intent().side(),
+            quantity,
+            price,
+        )
+    }
+}
+
+impl CnFeeSchedule {
+    fn quote_side(
+        &self,
+        instrument: &InstrumentSpec,
+        side: Side,
+        quantity: Quantity,
+        price: Fixed8,
+    ) -> Result<TransactionCostQuote, ExecutionError> {
         let notional = price
             .scaled()
             .checked_mul(quantity.units())
@@ -506,7 +526,6 @@ impl FeeSchedule for CnFeeSchedule {
         let commission = self
             .rounded_fee(notional, self.commission_ppm)?
             .max(self.minimum_commission.scaled());
-        let side = order.submitted_order().intent().side();
         let tax = if side == Side::Sell && instrument.asset_class() == tm_core::AssetClass::Stock {
             self.rounded_fee(notional, self.sell_stamp_duty_ppm)?
         } else {
@@ -814,12 +833,28 @@ struct LedgerLot {
     unit_cost_scaled: i128,
 }
 
+type LedgerInstruments = Arc<BTreeMap<String, InstrumentSpec>>;
+
+fn index_instruments(instruments: Vec<InstrumentSpec>) -> Result<LedgerInstruments, LedgerError> {
+    let count = instruments.len();
+    let instruments = instruments
+        .into_iter()
+        .map(|instrument| (instrument.instrument_id().0.clone(), instrument))
+        .collect::<BTreeMap<_, _>>();
+    if instruments.len() != count {
+        return Err(LedgerError::Invariant(
+            "ledger instruments must be unique".to_owned(),
+        ));
+    }
+    Ok(Arc::new(instruments))
+}
+
 /// Exact-cash, FIFO, lot-aware ledger for the daily event runtime.
 #[derive(Clone, Debug)]
 pub struct LotLedger<C> {
     cash_scaled: i128,
     current_time: OffsetDateTime,
-    instruments: BTreeMap<String, InstrumentSpec>,
+    instruments: LedgerInstruments,
     calendar: C,
     lots: BTreeMap<String, LedgerLot>,
     last_prices: BTreeMap<String, i128>,
@@ -838,18 +873,22 @@ impl<C: TradingCalendar + Clone> LotLedger<C> {
                 "initial cash must be positive".to_owned(),
             ));
         }
+        Self::with_cash(
+            initial_cash_scaled,
+            initial_time,
+            index_instruments(instruments)?,
+            calendar,
+        )
+    }
+
+    fn with_cash(
+        initial_cash_scaled: i128,
+        initial_time: OffsetDateTime,
+        instruments: LedgerInstruments,
+        calendar: C,
+    ) -> Result<Self, LedgerError> {
         Fixed8::from_scaled(initial_cash_scaled)
             .map_err(|error| LedgerError::Invariant(error.to_string()))?;
-        let count = instruments.len();
-        let instruments = instruments
-            .into_iter()
-            .map(|instrument| (instrument.instrument_id().0.clone(), instrument))
-            .collect::<BTreeMap<_, _>>();
-        if instruments.len() != count {
-            return Err(LedgerError::Invariant(
-                "ledger instruments must be unique".to_owned(),
-            ));
-        }
         Ok(Self {
             cash_scaled: initial_cash_scaled,
             current_time: initial_time,

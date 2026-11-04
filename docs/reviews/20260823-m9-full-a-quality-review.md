@@ -1,58 +1,61 @@
-# M9 全A研究代码质量审核与处置
+# M9 all-A-share research review and findings
 
-审核日期：2026-08-23
-范围：20年全A数据、PIT panel、因子评估、报告、legacy基本面策略
-方式：3个fresh-context subagent各做一次只读bounded review；随后按TDD修复，不循环追加审查。
+- **Review date** 2026-08-23
+- **Scope** Twenty years of A-share data, the point-in-time (PIT) panel, factor evaluation, reporting, and the legacy fundamental strategy.
 
-## 架构审核
+Three reviewers independently performed one bounded, read-only review with fresh context. The team then used test-driven fixes without reopening successive review rounds. The disposition below distinguishes completed work from remaining data or implementation limits.
 
-| ID | 严重度 | 问题 | 处置 | 结果/边界 |
-|---|---|---|---|---|
-| A-01 | High | 日期级财务公告在公告日收盘立即可用 | accept/complete | `date_only_next_eligible_session`，真实fundamental panel重建 |
-| A-02 | High | 下载task未绑定实际request evidence | accept/complete | task/evidence/Parquet metadata三方canonical request SHA校验 |
-| A-03 | High | verify只证对象完整性，blocked无生产路径 | accept/partial | v2 outcome、typed blocker已实现；124个历史空对象只能追溯为`verified_empty`，不能事后伪造source-history原因 |
-| A-04 | Medium | report未绑定实际panel/materialization | accept/complete | report identity v3绑定market/factor input manifest SHA，CLI先重验输入 |
-| A-05 | Medium | fundamental report无仓库内CLI路径 | accept/complete | `evaluate --factor-manifest-kind fundamental`与`verify-report` |
-| A-06 | Medium | reconcile扫描共享raw glob且无plan-complete gate | accept/complete | 只消费目标plan的typed completed daily evidence，缺任一task即fail closed |
-| A-07 | Medium | research反向依赖legacy strategy cache | accept/partial-defer | provider protocol已下沉`trademaster.data`；CLI cache adapter迁移需兼容里程碑 |
-| A-08 | Medium | 最新session无publication watermark，跨市场policy硬编码 | accept/defer | M9冻结A股policy；港美股时钟/货币/symbol codec列入后续market-policy规格 |
+## Architecture
 
-## 工程实现审核
+| ID | Severity | Finding | Disposition | Outcome |
+| --- | --- | --- | --- | --- |
+| A-01 | High | Date-only financial announcements became available at the close on their announcement date. | accept/complete | Adopted `date_only_next_eligible_session` and rebuilt the real fundamental panel. |
+| A-02 | High | A download task could accept evidence belonging to another request. | accept/complete | Cross-check the canonical request SHA on the task, evidence and Parquet metadata. |
+| A-03 | High | Verification proved only object integrity. The pipeline had no path to produce a blocked outcome. | accept/partial | The downloader now records acquisition outcomes and distinguishes missing source history from denied access. The 124 historical empty objects can only be classified as `verified_empty`. Their original source-history reasons are unknown. |
+| A-04 | Medium | Reports lacked a link to the actual input panel and materialization. | accept/complete | Report identity v3 binds the market and factor input manifest SHAs. The CLI re-verifies inputs first. |
+| A-05 | Medium | The repository lacked a CLI path for fundamental reports. | accept/complete | Added `evaluate --factor-manifest-kind fundamental` and `verify-report`. |
+| A-06 | Medium | Reconciliation scanned a shared raw-file glob and could run on an incomplete plan. | accept/complete | Use only typed, completed daily evidence from the target plan. Stop if any task is missing. |
+| A-07 | Medium | Research depended on the legacy strategy cache. | accept/partial-defer | The provider protocol moved to `trademaster.data`. Migrating the CLI cache adapter requires a compatibility milestone. |
+| A-08 | Medium | The latest session lacked a publication watermark. Market policy was hard-coded. | accept/defer | M9 fixes the A-share policy. Hong Kong and US market clocks, currencies and symbol codecs belong in a later market-policy specification. |
 
-| ID | 严重度 | 问题 | 处置 | 结果/边界 |
-|---|---|---|---|---|
-| E-01 | High | request identity未强校验 | duplicate A-02 | 已关闭 |
-| E-02 | High | NaN/Inf复权或收益可标为valid | accept/complete | finite-or-null规范，`is_valid => finite`，真实全A非有限valid计数为0 |
-| E-03 | High | managed definition与手写SQL可能漂移 | accept/complete | 11因子含null/停牌session逐行Python↔DuckDB parity gate；M9输入合同固定dense sessions |
-| E-04 | Medium | 权限、参数、瞬时错误无分类 | accept/complete | 权限立即blocked；credential/invalid/unknown不重试；仅明确transient退避 |
-| E-05 | Medium | task领取非原子 | accept/complete | owner/expiry lease、事务claim、过期回收、lost-lease拒绝提交 |
-| E-06 | Medium | status反序列化52,563任务且eager import | accept/complete | status直接查catalog、重模块lazy import；实测峰值从约485MB降至约162MB |
-| E-07 | Medium | 两个builder直查私有表并复制逻辑 | accept/complete | 统一`completed_evidence_snapshot` typed API |
-| E-08 | Medium | legacy cache endpoint/dataset路径逃逸 | accept/complete | stable identifier、root containment、filesystem-root拒绝与回归测试 |
-| E-09 | Medium | legacy行情装配近二次扫描 | accept/complete | adj末值和price history改为单次分组，复杂度降为$O(rows)$ |
-| E-10 | Medium | out-of-core测试只检查源码字符串 | accept/complete | 128MB DuckDB memory limit、spill目录和真实Parquet行为测试 |
+## Engineering
 
-## 因子与策略审核
+| ID | Severity | Finding | Disposition | Outcome |
+| --- | --- | --- | --- | --- |
+| E-01 | High | Request identity was not strictly validated. | duplicate A-02 | Closed under A-02. |
+| E-02 | High | NaN/Inf adjustments and returns could count as valid. | accept/complete | Enforced finite-or-null and `is_valid => finite`. The real full-universe run had zero non-finite valid rows. |
+| E-03 | High | Handwritten SQL could diverge from managed factor definitions. | accept/complete | Row-by-row Python/DuckDB parity covers all 11 factors, nulls and suspended sessions. The M9 input contract uses dense trading sessions. |
+| E-04 | Medium | Permission, parameter and transient errors were handled alike. | accept/complete | Permission errors block immediately. Credential, invalid and unknown errors stop. Only explicit transient errors receive bounded backoff. |
+| E-05 | Medium | Workers could claim the same task. | accept/complete | Transactional claims, owner and expiry leases, reclamation after expiry, and rejection of writes by workers that lost their lease. |
+| E-06 | Medium | Status eagerly imported modules and deserialized 52,563 tasks. | accept/complete | Query the catalog directly and defer heavy imports. Measured peak memory fell from about 485 MB to 162 MB. |
+| E-07 | Medium | Two builders queried private tables and duplicated logic. | accept/complete | Both use the typed `completed_evidence_snapshot` API. |
+| E-08 | Medium | Endpoint and dataset paths could escape the legacy cache root. | accept/complete | Restricted identifiers, enforced root containment, rejected filesystem-root paths, and added regression tests. |
+| E-09 | Medium | Legacy market-data assembly used nearly quadratic scans. | accept/complete | Group adjustment endpoints and price histories in one pass, giving $O(rows)$ time. |
+| E-10 | Medium | Out-of-core tests inspected source strings. | accept/complete | Tested real Parquet with a 128 MB DuckDB memory limit and a spill directory. |
 
-| ID | 严重度 | 问题 | 处置 | 结果/边界 |
-|---|---|---|---|---|
-| F-01 | High | GTJA bar-compressed Python与dense SQL窗口不一致 | accept/complete | 正式M9输入固定dense session并对全部11因子做parity；旧cache结果不作M9证据 |
-| F-02 | High | 同日公告和未知修订造成基本面前视 | accept/complete | 下一session可用、无revision known-at时只用`update_flag=0` |
-| F-03 | High | quantile先过滤未来label，且不是可执行A股收益 | accept/partial | ex-ante分组/换手/容量已冻结；限价、退市和延迟退出明确要求Rust策略回放 |
-| F-04 | High | 重叠horizon被当独立收益复利 | accept/complete | 使用真实最小观察间隔14 sessions；20日以上spread/Sharpe/DD/recovery为N/A |
-| F-05 | High | capacity重复乘1000 | accept/complete | entry amount直接按CNY，Size方向化capacity约475万元而非约588亿元 |
-| F-06 | Medium | evaluator忽略definition direction | accept/complete | direction进入config hash；IC保持raw，Top/spread/turnover/capacity按方向 |
-| F-07 | Medium | 因子相关性跨年份混池 | accept/complete | 先逐event相关再等权平均，记录数语义改为有效event数 |
-| F-08 | Medium | 市值中性/bucket/状态稳健性不完整 | accept/partial | Size中性RankIC与Top市值tercile完成；ST/板块/年龄/限价分组保留schema/Rust blocker |
-| F-09 | High | 旧行业策略用未来静态行业映射 | accept/complete | 默认历史interval required；正式Top1 probe在首个gap前fail closed，旧报告撤回 |
-| F-10 | Medium | QFQ合成价进Rust且`.BJ`映射错误 | accept/partial-defer | BSE venue已修；旧报告改称研究近似，公司行动/分红精确账本需独立Rust里程碑 |
+## Factors and strategies
 
-## 修复后正式产物
+| ID | Severity | Finding | Disposition | Outcome |
+| --- | --- | --- | --- | --- |
+| F-01 | High | GTJA's Python windows compressed missing bars while the SQL windows used dense sessions. | accept/complete | M9 requires dense sessions and parity for all 11 factors. Earlier cache results are excluded from M9 evidence. |
+| F-02 | High | Same-day announcements and undated revisions introduced look-ahead. | accept/complete | Announcements first become available in the next session. If the revision time is unknown, only `update_flag=0` is eligible. |
+| F-03 | High | Quantile membership depended on future labels. Quantile returns did not establish executable A-share returns. | accept/partial | Assign stocks to groups before joining return labels. Calculate turnover and capacity from the membership and prices available on that date. Price limits, delistings and delayed exits require Rust strategy replay. |
+| F-04 | High | Overlapping horizons were compounded as independent returns. | accept/complete | Use the actual minimum observation spacing of 14 sessions. Overlapping 20-session and longer spread, Sharpe, drawdown and recovery statistics are N/A. |
+| F-05 | High | Capacity multiplied the amount by 1000 twice. | accept/complete | Read entry amount directly in CNY. Direction-adjusted Size capacity was about CNY 4.75 million. The old estimate was about CNY 58.8 billion. |
+| F-06 | Medium | Evaluation ignored direction from the definition. | accept/complete | Direction enters the config hash. IC stays raw. Top selection, spread, turnover and capacity follow direction. |
+| F-07 | Medium | Factor correlations pooled observations across years. | accept/complete | Calculate correlations for each event and average them equally. The observation count records valid events. |
+| F-08 | Medium | Size neutrality and robustness across size buckets and trading states were incomplete. | accept/partial | Added size-neutral RankIC and top-portfolio size-tercile exposure. ST, board, listing-age and price-limit breakdowns still require schema/Rust work. |
+| F-09 | High | The legacy industry strategy backfilled earlier dates with future industry classifications. | accept/complete | Historical intervals are required by default. The formal Top1 probe stopped before selection when it encountered the first gap, and the prior report conclusions were withdrawn. |
+| F-10 | Medium | Rust received synthetic QFQ prices and `.BJ` mapped to the wrong venue. | accept/partial-defer | Fixed the BSE venue and relabeled older reports as research approximations. Exact cash-dividend and corporate-action accounting requires a separate Rust milestone. |
 
-以下路径由真实E2E在本地生成；`artifacts/`不进入Git：
+## Local evidence after the fixes
 
-- 全A研究索引：`artifacts/research/full-a-20y/FINAL_REPORT.md`
-- 公开11因子报告：`artifacts/research/full-a-20y/public-factor-report/`
-- 基本面10因子报告：`artifacts/research/full-a-20y/fundamental-factor-report/`
-- 旧策略报告撤回说明：`artifacts/strategies/REVIEW_NOTICE.md`
-- 正式Top1 PIT blocker：`artifacts/strategies/m9-pit-audit-top1-blocked-probe/BLOCKED.md`
+The real end-to-end runs produced the following artifacts under the Git-ignored `artifacts/` directory.
+
+| Evidence | Local path |
+| --- | --- |
+| All-A-share research index | `artifacts/research/full-a-20y/FINAL_REPORT.md` |
+| Report for 11 public factors | `artifacts/research/full-a-20y/public-factor-report/` |
+| Report for 10 fundamental factors | `artifacts/research/full-a-20y/fundamental-factor-report/` |
+| Withdrawal notice for earlier strategy reports | `artifacts/strategies/REVIEW_NOTICE.md` |
+| Historical interval blocking the formal Top1 PIT run | `artifacts/strategies/m9-pit-audit-top1-blocked-probe/BLOCKED.md` |

@@ -1,10 +1,14 @@
-# Strategy Layer Guide
+# Strategies
 
-Strategy packages compose snapshot-bound managed factors/signals, the Rust runtime, and reports.
-They own selection and portfolio intent, but reusable factor formulas, transforms, versions and
-evaluation belong to `trademaster.factors`. Strategies must not implement an independent cash,
-fill, position, fee, or settlement engine in Python.
+Strategies select instruments and produce portfolio targets. Rust handles
+cash, fills, positions, fees and settlement.
 
-Every real strategy run persists its full configuration hash, candidate/factor/selection snapshot
-identities, runner request/result, summary and reports in a verifiable bundle. Tushare access is
-cache-first and credentials remain external.
+The industry strategy uses registered factors and dated signals. Keep managed
+formulas, transforms, factor versions and evaluation in `trademaster.factors`.
+Its event-run bundle records the configuration hash, candidate, factor and
+selection identities, request, result, summary and reports.
+
+The daily snapshot demos read prices at the decision cutoff and return
+complete target weights. Save the snapshot, portable request, Rust result
+and strategy summary. For Tushare inputs, check the local cache first and
+supply credentials through the environment.

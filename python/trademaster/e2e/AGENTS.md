@@ -1,10 +1,16 @@
-# E2E Orchestration Guide
+# End-to-end runs
 
-This module owns only the typed Python-to-Rust process boundary and reproducible run bundle.
-It may allocate vectorized target weights into lot-sized target quantities before execution,
-but it must never simulate fills, cash, positions, fees, settlement, or NAV in Python.
+This module handles the native Python-to-Rust event interface and the run
+bundle. It can convert precomputed target weights into whole-lot target
+quantities before event execution. The daily snapshot demos send complete
+target weights through `trademaster.backtest`. Rust calculates the share
+quantities and cash reserves, processes fills and settlement, and records
+positions, fees and net asset value.
 
-Bundle v3 binds the exact request/result, source and selection snapshots, factor definitions,
-materialization DAG and Parquet, report input/HTML, strategy summary and Markdown. The verifier
-re-hashes every object, validates factor parent lineage, replays Rust and rebuilds HTML. Subprocess
-failures and identity mismatches fail closed. Credentials never enter artifacts or logs.
+The industry strategy's v3 event bundle records the exact request and result,
+source and selection snapshots, factor definitions, the materialization
+dependency graph and its Parquet files, report inputs and HTML, the strategy
+summary and its Markdown report. The verifier rehashes every object, checks
+parent factor records, reruns Rust and rebuilds the HTML. Stop on an
+engine error or identity mismatch. Keep
+credentials out of artifacts and logs.

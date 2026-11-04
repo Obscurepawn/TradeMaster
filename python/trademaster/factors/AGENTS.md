@@ -1,41 +1,45 @@
-# Factor Layer Guide
+# Factors
 
-This module owns versioned factor registration, dependency DAGs, deterministic
-execution, Parquet materialization, DuckDB discovery, evaluation, and canonical
-Arrow factor outputs. It never fetches provider data directly and never mutates
-portfolio or ledger state.
+This module registers and versions factors, resolves dependencies, computes
+factors deterministically, writes Parquet, indexes results in DuckDB, evaluates
+factors and emits Arrow tables. Provider calls and account updates belong to
+other layers.
 
-Every input must already be bound to an M1 snapshot through `FactorContext`.
-Outputs preserve that exact snapshot provenance, use the frozen factor schema,
-contain no future event time, and identify every row with the registered
-`factor_id/version`.
+Pass M1 data snapshots through `FactorContext`. Keep the exact input snapshot
+provenance in the output and use the stable factor schema. Each row carries
+the registered `factor_id/version` and an event time at or before the cutoff.
 
-Registry dependencies fail closed. Dataset dependencies must resolve to a canonical
-dataset field. Composite factor dependencies must refer to a registered factor or an
-explicitly declared external factor identity.
+Resolve each dataset dependency to a canonical field. For a composite factor,
+each factor dependency must be registered or declared as an external factor
+by identity. Reject unresolved dependencies.
 
-Formal managed factors use `FactorDefinition` and bind code, parameters, dependencies,
-source snapshot, exact input table, scope, parent materializations, and output hash.
-Parquet is authoritative; `factors/catalog.duckdb` is only discovery metadata. A
-definition may not change under the same factor ID/version: bump the version instead.
-Loading always re-hashes definitions, manifests, and Parquet and fails closed.
+## Managed factors and the public library
 
-Public libraries use a separate governance boundary. Source, collection, and
-candidate records are immutable content-addressed JSON under `factors/library/`;
-the top-level JSON manifest binds the complete member set and every object hash;
-DuckDB rows and dependency indexes are discovery-only and must be checked back
-against that manifest. A candidate may be blocked, a risk model,
-or a local variant. Do not place it in `ManagedFactorRegistry` until formula
-semantics, data/PIT policy, implementation identity, and golden cases justify its
-`implemented` status. Preserve report formula names and local semantic differences.
+Use `FactorDefinition` to identify a managed factor's code, parameters and
+dependencies. For each materialization, record the source snapshot, exact
+input table, scope, parent materializations and output hash. Keep the values
+in Parquet and use `factors/catalog.duckdb` for discovery. Bump the version
+whenever a definition changes. On every load, rehash the definitions,
+manifests and Parquet files and reject mismatches.
 
-Forward returns belong only to `evaluation.py`. They must never be passed to a factor
-or signal context. Evaluation alignment starts at the next eligible execution event,
-and its artifacts bind the feature materialization separately from label evidence.
+Store public sources, collections and candidates as immutable, content-addressed
+JSON in `factors/library/`. The top-level manifest lists every member and its
+hash. Check DuckDB entries and dependency indexes against that manifest.
+Candidates can be blocked, risk models or local variants. Verify the formula,
+data and PIT rules, implementation identity and results against reference
+cases. Register the factor and its definition in `ManagedFactorRegistry`.
+Set the library candidate's `implementation_status` to `implemented` or
+`implemented_variant` and link it to the verified definition.
+Preserve the formula name used in the source report and document
+any differences in the local implementation.
 
-Factor implementations operate independently per instrument unless their spec
-explicitly declares cross-sectional semantics. Stable sorting must always use an
-instrument identifier tie-break; never rely on provider or hash iteration order.
-Cross-sectional transforms isolate each event time before winsorization or
-standardization and determine the eligible universe before fitting distribution
-statistics.
+## Computation and evaluation
+
+Compute separately for each instrument unless the spec calls for a
+cross-sectional calculation. Break sorting ties by instrument ID. For
+cross-sectional transforms, group by event time and select the eligible
+universe before fitting winsorization or standardization statistics.
+
+Keep forward returns in `evaluation.py` and out of factor and signal contexts.
+Align labels to the next eligible execution event. Record the feature
+materialization and the evidence for each label separately.

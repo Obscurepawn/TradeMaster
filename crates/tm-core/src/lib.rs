@@ -1586,6 +1586,11 @@ impl AccountSnapshot {
         &self.positions
     }
 
+    /// Move the closing positions into a strategy's account view.
+    pub fn into_positions(self) -> Vec<PositionSnapshot> {
+        self.positions
+    }
+
     pub fn lots(&self) -> &[PositionLot] {
         &self.lots
     }
