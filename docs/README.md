@@ -7,6 +7,7 @@ Start with the question you need to answer. A factor study compares today's sign
 | See cash, fills and a final balance | Run the [four-day rotation](../README.md#run-the-example) and follow the blocked sale, the next buy and the daily balance. For a saved event request, use the [three-session round trip](reference/execution.md#replay-the-three-session-example). |
 | Find performance bottlenecks | The [core performance review](reviews/20261105-backtest-performance.md) measures snapshot loading, scheduled strategies, Rust settlement and allocation in broad portfolios. |
 | Measure a long backtest | The [fifteen-year ETF benchmark](examples/broad-etf.md) compares a daily index signal with buying and holding the same ETF and reports time per full run. |
+| Select stocks across the A-share market | The [weekly stock-selection example](examples/all-a-momentum.md) ranks historical Shanghai, Shenzhen and Beijing listings and follows the resulting orders. |
 | Compare strategies on the same market | The [TuShare example](examples/tushare-strategies.md) runs weekly momentum, a moving-average crossover and MACD on five stocks. It lists the inputs, commands and measured outcomes. |
 | Backtest a portfolio of target weights | The [daily snapshot API](reference/snapshot-backtest.md) explains decision cutoffs, partial investment, cash reserves and retries. |
 | Understand a difference between engines | The [same-market comparison](examples/rebalance-comparison.md) lines up dated targets, trades and daily account values. |

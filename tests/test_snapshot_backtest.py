@@ -176,7 +176,7 @@ def test_callback_and_dated_targets_match_the_four_session_account(tmp_path: Pat
     snap = weekly_snapshot(tmp_path)
 
     class Rotation:
-        def on_decision(self, day: DecisionDay) -> dict[str, Decimal]:
+        def on_close(self, day: DecisionDay) -> dict[str, Decimal]:
             assert day.scores("score")["A"] is None
             return {"B": Decimal("0.80")}
 
@@ -370,7 +370,7 @@ def test_later_decision_wins_when_an_older_target_is_delayed(
     ]
 
     class ExitAtClose:
-        def on_decision(self, day: DecisionDay) -> dict[str, Decimal] | None:
+        def on_close(self, day: DecisionDay) -> dict[str, Decimal] | None:
             return {} if day.session == DAYS[1] else None
 
     callback = backtest(snap, ExitAtClose(), initial_account=initial, detail=True)
@@ -408,7 +408,7 @@ def test_strategy_waits_for_sale_and_receives_fills_in_summary_mode(tmp_path: Pa
     days: list[BacktestDay] = []
 
     class WaitForSale:
-        def on_decision(self, day: BacktestDay) -> dict[str, Decimal] | None:
+        def on_close(self, day: BacktestDay) -> dict[str, Decimal] | None:
             days.append(day)
             if len(days) == 1:
                 return {}
@@ -479,15 +479,12 @@ def test_weekly_on_close_reads_intervening_trades_at_the_next_decision(tmp_path:
     assert second.account.sellable_quantity("A") == second.fills[0].quantity
 
 
-def test_on_close_wins_over_on_decision_and_propagates_its_error(tmp_path: Path) -> None:
+def test_on_close_propagates_its_error(tmp_path: Path) -> None:
     snap = weekly_snapshot(tmp_path)
     sessions = []
     error = LookupError("invalid factor")
 
     class FailAtSecondClose:
-        def on_decision(self, day: BacktestDay) -> None:
-            pytest.fail("Only on_close should be called when both hooks exist")
-
         def on_close(self, day: BacktestDay) -> dict[str, Decimal]:
             sessions.append(day.session)
             if len(sessions) == 2:
@@ -514,7 +511,7 @@ def test_incomplete_close_receives_no_decision(tmp_path: Path) -> None:
     observed = []
 
     class Observe:
-        def on_decision(self, day: BacktestDay) -> None:
+        def on_close(self, day: BacktestDay) -> None:
             observed.append(day.session)
 
     run = backtest(
@@ -555,7 +552,7 @@ def test_dividend_follows_the_entitled_holder_and_payment_date(tmp_path: Path) -
     balances = []
 
     class Rotate:
-        def on_decision(self, day: BacktestDay) -> dict[str, int]:
+        def on_close(self, day: BacktestDay) -> dict[str, int]:
             balances.append((day.account.cash, day.account.dividend_receivable, day.account.equity))
             return {} if day.session == DAYS[0] else {"B": 1}
 

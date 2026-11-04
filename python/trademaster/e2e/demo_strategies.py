@@ -141,7 +141,7 @@ class DemoStrategy:
     def __init__(self, name: str) -> None:
         self.name = name
 
-    def on_decision(self, day: DecisionDay) -> dict[str, Decimal] | None:
+    def on_close(self, day: DecisionDay) -> dict[str, Decimal] | None:
         if self.name == "cross-sectional-momentum":
             lookback = 20
             prices = {s: day.closes(s, adjusted=True, limit=lookback + 1) for s in UNIVERSE}

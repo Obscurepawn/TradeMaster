@@ -56,7 +56,7 @@ Milliseconds below are medians from 25 trials after one warm-up per mode, on an 
 
 The native SDK prepares the Rust market index at snapshot open and reuses it on every subsequent run. On this sample the repeated detailed runs save about two milliseconds each. The timing script uses the original MACD implementation, which recalculates exponential averages from its full visible price history. The [current snapshot demo](../../README.md#write-a-strategy) updates the same averages once per close.
 
-Run the same [SDK timing script](../../specs/examples/profile_backtest.py) in each SDK environment. It rotates strategy order, records every sample and hashes the targets plus the complete ledger. The output path is a JSON file. The local comparison under `artifacts/native-comparison/` contains `before.json`, `after.json`, a manifest of the measured inputs and binaries, and the old Linux SDK used for this run.
+To reproduce the two historical columns, use the [timing script from that comparison](https://github.com/Obscurepawn/TradeMaster/blob/5dc86ce81f45de862c42c24c2e074187d623fcf5/specs/examples/profile_backtest.py) in each original SDK environment. To measure the current SDK, run the [current timing script](../../specs/examples/profile_backtest.py) below. It rotates strategy order, records every sample and hashes the targets plus the complete ledger. The output path is a JSON file. The local comparison under `artifacts/native-comparison/` contains `before.json`, `after.json`, a manifest of the measured inputs and binaries, and the old Linux SDK used for this run.
 
 ```bash
 uv run python specs/examples/profile_backtest.py artifacts/rebalance-comparison/snapshot --repeats 25 --output native-timings.json

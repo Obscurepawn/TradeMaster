@@ -25,15 +25,15 @@ from specs.examples.weekly_rotation import WeeklyRotation
 from trademaster.backtest import Snapshot
 
 snapshot = Snapshot.open("artifacts/blocked-rotation/snapshot")
-weights = WeeklyRotation().on_decision(snapshot.day(date(2024, 1, 5)))
+weights = WeeklyRotation().on_close(snapshot.day(date(2024, 1, 5)))
 print(weights)  # {'B': Decimal('0.80')}
 ```
 
-Pass one strategy or one target table per run. A strategy implements `on_decision(day) -> dict[str, Decimal] | None`. The `schedule` selects its decision dates. A target table already includes those dates. Use `initial_cash` for a cash start, or `initial_account` for a portfolio with cash and existing holdings. Each starting lot specifies an instrument, quantity and sellable date. At each opening, Rust unlocks lots due that session before sizing orders. A lot with a sellable date beyond the supplied calendar remains in holdings and contributes to equity throughout the run. Its sellable quantity stays at zero.
+Pass one strategy or one target table per run. A strategy implements `on_close(day) -> dict[str, Decimal] | None`. The `schedule` selects its decision dates. A target table already includes those dates. Use `initial_cash` for a cash start, or `initial_account` for a portfolio with cash and existing holdings. Each starting lot specifies an instrument, quantity and sellable date. At each opening, Rust unlocks lots due that session before sizing orders. A lot with a sellable date beyond the supplied calendar remains in holdings and contributes to equity throughout the run. Its sellable quantity stays at zero.
 
 The summary includes net return, maximum drawdown, turnover, total costs, the share of targets that expired with a shortfall, and data coverage. The daily equity series contains cash, the market value of holdings and their sum. With `detail=True`, the same calculation also returns attempts, orders, fills and daily positions. Both modes record the snapshot ID, targets and assumptions. Use `result.save(directory)` to save a replayable request and its Rust result alongside the snapshot. The event command produces an HTML report.
 
-The [strategy demo](examples/weekly_rotation.py) runs with `python3 specs/examples/weekly_rotation.py`. Its `on_decision(day)` function sees only data available at the decision time. It reads `day.scores("rotation_score")`, ignores missing and nonfinite scores, and breaks ties by instrument ID. If A scores 0.35 and B scores 0.72, it returns `{"B": Decimal("0.80")}`.
+The [strategy demo](examples/weekly_rotation.py) runs with `python3 specs/examples/weekly_rotation.py`. Its `on_close(day)` function sees only data available at the decision time. It reads `day.scores("rotation_score")`, ignores missing and nonfinite scores, and breaks ties by instrument ID. If A scores 0.35 and B scores 0.72, it returns `{"B": Decimal("0.80")}`.
 
 | Strategy output | Meaning |
 |---|---|

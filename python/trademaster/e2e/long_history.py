@@ -69,7 +69,7 @@ class LongHistoryStrategy:
         self._total = Decimal(0)
         self._long = False
 
-    def on_decision(self, day: BacktestDay) -> dict[str, int] | None:
+    def on_close(self, day: BacktestDay) -> dict[str, int] | None:
         self.callbacks += 1
         if self.name == "buy_and_hold" and self._long:
             return None

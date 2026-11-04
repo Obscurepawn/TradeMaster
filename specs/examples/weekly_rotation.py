@@ -11,7 +11,7 @@ class DecisionSlice(Protocol):
 
 
 class WeeklyRotation:
-    def on_decision(self, day: DecisionSlice) -> dict[str, Decimal] | None:
+    def on_close(self, day: DecisionSlice) -> dict[str, Decimal] | None:
         # Rank by descending score, then by instrument ID.
         ranking = (
             (-score, instrument)
@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     day = FridaySnapshotSlice()
     print("Weekly closing scores", dict(day.scores("rotation_score")))
-    targets = WeeklyRotation().on_decision(day)
+    targets = WeeklyRotation().on_close(day)
     if targets is not None:
         for instrument, weight in targets.items():
             print(f"Target weight {instrument} {weight:.0%}")

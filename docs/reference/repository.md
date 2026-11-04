@@ -28,6 +28,8 @@ The [examples directory](../examples) holds the [three-session input](../example
 
 The [fifteen-year ETF benchmark](../examples/broad-etf.md) uses [broad_etf_data.py](../../python/trademaster/e2e/broad_etf_data.py) to verify the index closes, ETF prices, opening limits and distribution dates. [long_history.py](../../python/trademaster/e2e/long_history.py) runs and times both strategies, saves their ledgers and checks replay. The [loader tests](../../tests/test_broad_etf_data.py) cover input validation, and the [benchmark tests](../../tests/test_long_history.py) cover strategy decisions, fees and the output files. The [original stock loader](../../python/trademaster/e2e/long_history_data.py) and its [input tests](../../tests/test_long_history_data.py) serve the [single-stock regression](../examples/long-history.md).
 
+The [weekly all-A selection example](../examples/all-a-momentum.md) uses [prepare_all_a_snapshot.py](../../specs/examples/prepare_all_a_snapshot.py) to publish the daily market and [all_a_momentum.py](../../specs/examples/all_a_momentum.py) to rank stocks and run the ledger. The [market test](../../tests/test_prepare_all_a_snapshot.py) checks membership, price limits and corporate-action gaps. The [strategy tests](../../tests/test_all_a_momentum.py) check ranking, ties, missing observations, cash allocation and next-open execution.
+
 ## Specifications and design fixtures
 
 The [specification index](../../specs/INDEX.md) records milestone status. The documents in [specs](../../specs) preserve the design decisions, verification criteria and limitations in effect at the time of each change.

@@ -6,7 +6,7 @@ TradeMaster is a Python and Rust backtesting toolkit for Chinese A-shares and ET
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB)](https://www.python.org/) [![Rust 1.97+](https://img.shields.io/badge/Rust-1.97%2B-924514)](https://www.rust-lang.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue)](LICENSE)
 
-[Run the example](#run-the-example) · [Write a strategy](#write-a-strategy) · [Fifteen-year benchmark](#fifteen-year-benchmark) · [Backtest reports](#backtest-reports) · [Research a factor](#research-a-factor) · [Documentation](docs/README.md)
+[Run the example](#run-the-example) · [A-share trading rules](#a-share-trading-rules) · [Write a strategy](#write-a-strategy) · [Fifteen-year benchmark](#fifteen-year-benchmark) · [Backtest reports](#backtest-reports) · [Research a factor](#research-a-factor) · [Documentation](docs/README.md)
 
 ## Run the example
 
@@ -29,9 +29,32 @@ Session     Cash (CNY)   Equity (CNY)
 
 Monday's sell order is rejected. Tuesday's sale brings in CNY 71,995 after fees. At Wednesday's open, Rust buys 3,600 shares of B at CNY 20. The remaining CNY 19,990 includes the cash reserve and the amount left after rounding the order to whole lots. The script saves the orders, fills and daily account in `artifacts/blocked-rotation/result.json`. [Walk through the four sessions](docs/examples/rebalance-comparison.md#a-blocked-sale)
 
+## A-share trading rules
+
+The daily backtest checks each planned order against the stock’s trading status at the open. It assumes eligible small orders fill at the recorded opening price. The strategy sees the resulting holdings and cash at the close.
+
+| Case | What happens in the backtest |
+|---|---|
+| Price limits | The TuShare stock example uses each stock’s recorded limits for that session. An open at the upper limit blocks buys. An open at the lower limit blocks sells. The opposite side can still trade. |
+| Trading suspensions | A confirmed full-day suspension blocks both sides. The account keeps the shares and carries their last valuation, adjusted for any recorded cash dividend going ex that day. |
+| Minimum buy and lot size | The default A-share lot is **100 shares**. The smallest buy order is one lot, and larger buys must be multiples of 100. Partial sales also use whole lots. When selling an entire position of 1,050 sellable shares, the order includes the final 50. |
+| T+1 settlement | Stocks bought under T+1 become sellable on the next trading session. |
+| Price ticks | The engine rounds each buy-price cap down to the instrument’s price tick. |
+| Cash when rotating stocks | The model sets the buy budget before the open and reserves the target cash weight and estimated fees. A blocked sale leaves the shares in the account. A filled sale can fund buys from the next open. |
+| Trading costs | Each fill incurs the configured commission, subject to a minimum. The stock fee schedule adds stamp duty on sells and a transfer fee on Shanghai stock trades. Rejected orders incur no fees. |
+| Cash dividends | Holdings at the record-date close determine entitlement. On the ex-date the dividend appears in equity as a receivable. At the payment-date close it moves into cash, ready for the next open. |
+
+In the 30-session TuShare example, 49 of 63 orders filled. Suspensions blocked five orders. One buy was rejected because the stock opened at its upper limit. Eight other buys were rejected because the opening price exceeded the strategy’s own cap. [Orders and results](docs/examples/all-a-momentum.md#from-selection-to-fills)
+
+The full-A example ranks Shanghai, Shenzhen and Beijing listings. It marks opening permissions as unknown for STAR Market and Beijing stocks, whose order sizes follow different rules. If a planned order needs unknown opening data, the run reports `insufficient_data` before posting any fills for that open. [Snapshot API](docs/reference/snapshot-backtest.md) · [Execution and ledger tests](crates/tm-engine/tests/snapshot_backtest.rs)
+
 ## Write a strategy
 
-Define `on_close(day)` to choose portfolio weights after Rust has processed that session’s trades and valued the account. The MACD example trades China Merchants Bank (`600036.SH`). Each close updates the 12- and 26-session exponential moving averages. Their difference is the MACD line. When it crosses above its 9-session signal average, the strategy targets 100% in the stock. When it crosses below, the strategy targets cash.
+Both strategies implement `on_close(day)`. Rust calls it after processing the session’s trades and valuing the account. Python returns the weights it wants to hold, and Rust can first trade that portfolio at the next eligible open.
+
+### Single-stock timing with MACD
+
+Trade China Merchants Bank (`600036.SH`) using its daily adjusted close. The MACD line is the 12-session exponential moving average minus the 26-session average. Cross above its 9-session signal average and the strategy targets 100% in the stock. Cross below and it targets cash. Between crossings it keeps its current instruction.
 
 ```python
 from decimal import Decimal
@@ -70,24 +93,38 @@ result = backtest(market, MacdTiming("600036.SH"), schedule="daily_close",
 print(result.summary["fill_count"], result.equity[-1]["equity"])  # 5 106823.67
 ```
 
-A strategy can also wait for a sale to fill before choosing its next holding. In the four-day example, A must be sold first. The strategy reads the actual share count at each close, then targets 80% in B once A is gone.
+### Weekly stock selection across the A-share market
+
+At the last close of each trading week, rank the A-shares listed on that date by their return over the previous 20 trading sessions. Use the adjusted close at each end of the window. Select the ten highest returns and target 10% of the account in each stock. If only seven stocks qualify, the other 30% stays in cash. Tied returns are ordered by stock code.
 
 ```python
-class SwitchAfterSale:
-    def __init__(self):
-        self.sell_requested = False
-        self.buy_requested = False
+from decimal import Decimal
+from math import isfinite
 
+
+class AllAMomentum:
     def on_close(self, day):
-        if day.account.quantity("A"):
-            if not self.sell_requested:
-                self.sell_requested = True
-                return {}
-        elif not self.buy_requested:
-            self.buy_requested = True
-            return {"B": Decimal("0.80")}
-        return None
+        ranking = []
+        for symbol in day.instruments:
+            closes = day.closes(symbol, adjusted=True, limit=21)
+            if len(closes) < 21 or closes[0] is None or closes[-1] is None:
+                continue
+            momentum = closes[-1] / closes[0] - 1
+            if isfinite(momentum):
+                ranking.append((-momentum, symbol))  # Higher returns sort first.
+
+        winners = sorted(ranking)[:10]
+        return {symbol: Decimal("0.10") for _, symbol in winners}
 ```
+
+Run the strategy with `schedule="week_end"` on a snapshot that includes historical listings in Shanghai, Shenzhen and Beijing. The first 20 sessions supply the price history. A stock with a missing price at either end of the window is skipped. With the [TuShare research panel](docs/examples/all-a-momentum.md) prepared, run the two commands below.
+
+```bash
+uv run python specs/examples/prepare_all_a_snapshot.py
+uv run python specs/examples/all_a_momentum.py artifacts/all-a-momentum/snapshot --output artifacts/all-a-momentum/run
+```
+
+At the July 31, 2026 close, 5,506 of the 5,534 listed A-shares had both prices. The strategy picked ten. Its first orders became eligible on August 3, and the 30-session example produced 49 simulated fills. [Stock-selection code](specs/examples/all_a_momentum.py) · [Inputs, orders and results](docs/examples/all-a-momentum.md)
 
 | What your strategy controls | Python API |
 |---|---|
@@ -95,7 +132,7 @@ class SwitchAfterSale:
 | What to read | `day.closes(...)` provides price history. `day.scores(name)` returns published values across the listed instruments. `day.account` and `day.fills` show holdings, cash and fills through this close. |
 | What to hold | Return long-only weights for the whole portfolio. Omitted holdings have zero target weight. `{}` targets cash. `None` leaves the existing instruction in effect. Rust can first trade the target at the next eligible open. |
 
-For a precomputed strategy, pass dated weights to `backtest(..., targets=...)`. Existing strategies using `on_decision(day)` follow the same schedule. [MACD implementation](python/trademaster/strategies/demo.py) · [Account-aware example](specs/examples/blocked_rotation.py) · [Python API](docs/reference/snapshot-backtest.md)
+For a precomputed strategy, pass dated weights to `backtest(..., targets=...)`. To wait for a sale before buying the next holding, read `day.account.quantity(symbol)` in the same callback. [MACD implementation](python/trademaster/strategies/demo.py) · [Account-aware example](specs/examples/blocked_rotation.py) · [Python API](docs/reference/snapshot-backtest.md)
 
 The three-strategy example runs weekly momentum, moving-average timing and MACD on the same 98 TuShare sessions. [Strategy guide](docs/examples/tushare-strategies.md) · [Execution comparison and SDK timings](docs/examples/rebalance-comparison.md)
 
@@ -191,7 +228,7 @@ flowchart TD
 | How can I reproduce a report? | The event bundle links source data, factor versions and trades to the report. A daily snapshot run saves a request and ledger result for [replay](docs/reference/snapshot-backtest.md#save-and-replay). |
 | How does a target become a trade? | Follow a target from the Python decision to the Rust ledger in [Code Architecture Refactoring and Optimization](specs/20261104-code-architecture-refactor.md). |
 
-The daily execution model accounts for lot sizes, suspensions, price limits, settlement delays, commission, tax and slippage. Factor reports measure price changes over a chosen period. Strategy reports use actual simulated fills, including delayed exits. The opening execution model fills an eligible small order at the observed open and applies the configured costs.
+Factor reports measure price changes over a chosen period. Strategy reports use the account’s simulated fills, including delayed exits, and deduct the configured costs.
 
 The industry strategy uses adjusted prices for trades and valuations. Its guide describes how it handles a missing daily bar, cash dividends and splits. [Industry strategy accounting](python/trademaster/strategies/industry_fundamental_top5/README.md)
 

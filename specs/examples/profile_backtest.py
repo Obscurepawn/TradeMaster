@@ -17,9 +17,9 @@ class TimedStrategy(DemoStrategy):
         self.calls = 0
         self.elapsed_ns = 0
 
-    def on_decision(self, day):
+    def on_close(self, day):
         start = perf_counter_ns()
-        target = super().on_decision(day)
+        target = super().on_close(day)
         self.elapsed_ns += perf_counter_ns() - start
         self.calls += 1
         return target

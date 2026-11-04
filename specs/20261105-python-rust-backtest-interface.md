@@ -4,7 +4,7 @@
 
 ## Strategy API
 
-Use `backtest(snapshot, strategy=..., schedule=..., initial_account=..., policy=..., detail=...)` and define `on_close(day)`. Existing `on_decision(day)` strategies use the same schedule. When both methods are present, the SDK calls `on_close` once per scheduled close. At a scheduled close, the SDK passes a `BacktestDay` with the existing `DecisionDay` market interface and two additional fields. Calling `snapshot.day(session)` outside a run still returns the ordinary market view.
+Use `backtest(snapshot, strategy=..., schedule=..., initial_account=..., policy=..., detail=...)` and define `on_close(day)`. The SDK calls this method once per scheduled close. At a scheduled close, the SDK passes a `BacktestDay` with the existing `DecisionDay` market interface and two additional fields. Calling `snapshot.day(session)` outside a run still returns the ordinary market view.
 
 | Value | What the strategy can read |
 | --- | --- |
@@ -82,4 +82,6 @@ A clean Linux wheel installation ran both four-session examples and all three Tu
 
 ## Close callback verification
 
-The callback tests initially failed on a strategy that defined only `on_close` and on the choice between two methods. The SDK now resolves the method once per run. The tests verify weekly delivery of intervening fills, selection of `on_close` when both names exist and propagation of a strategy error. The [README strategies](../README.md#write-a-strategy) run against the 98-session MACD and four-session blocked-sale examples. The daily MACD, moving-average and momentum demos reproduced every saved target and the full ledger. The installed wheel reproduced the MACD ledger as well. The offline suite passed 330 tests and skipped three live provider checks.
+The SDK binds `strategy.on_close` once per run. The tests check daily and weekly decisions, delivery of intervening fills, propagation of a strategy error and a fresh account on the next run. Dated weights still enter through `targets=`. The [README](../README.md#write-a-strategy) shows a daily MACD strategy and weekly cross-sectional stock selection. The [blocked-sale example](examples/blocked_rotation.py) demonstrates a strategy that waits for the account to confirm a sale.
+
+The [weekly all-A example](../docs/examples/all-a-momentum.md) ran on 30 real sessions. Both sets of ten target weights matched an independent calculation from the raw inputs. The saved request reproduced all 49 fills and the full closing ledger. Existing 98-session demo runs and the fifteen-year ETF and stock benchmarks reproduced their targets and ledgers after migrating the strategy hook.

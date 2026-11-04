@@ -99,13 +99,12 @@ class BacktestDay(DecisionDay):
     fills: tuple[Fill, ...]
 
 
-class Strategy(Protocol):
-    def on_decision(self, day: BacktestDay) -> Weights | None: ...
-
-
 @runtime_checkable
-class CloseStrategy(Protocol):
+class Strategy(Protocol):
     def on_close(self, day: BacktestDay) -> Weights | None: ...
+
+
+CloseStrategy = Strategy
 
 
 @dataclass(frozen=True)
@@ -334,7 +333,7 @@ def _summarize(
 
 def backtest(
     snapshot: Snapshot,
-    strategy: CloseStrategy | Strategy | None = None,
+    strategy: Strategy | None = None,
     *,
     targets: Mapping[date, Weights | None] | Sequence[TargetBatch] | pa.Table | None = None,
     schedule: Schedule = "daily_close",
@@ -345,8 +344,7 @@ def backtest(
 ) -> BacktestResult:
     """Call a strategy at the selected closes or replay dated complete targets.
 
-    A strategy supplies on_close(day) or the legacy on_decision(day). When it
-    supplies both, only on_close is called.
+    A strategy's on_close(day) receives the closing account and recent fills.
     Dates in a mapping are decision sessions. None keeps the active target, {} exits
     all holdings. A last-session decision is recorded but has no in-sample execution.
     """
@@ -405,9 +403,7 @@ def backtest(
     if strategy is None:
         raw = snapshot._market.run(run, [])
     else:
-        on_close = (
-            strategy.on_close if isinstance(strategy, CloseStrategy) else strategy.on_decision
-        )
+        on_close = strategy.on_close
 
         def decide(
             index: int, ledger: NativeAccount, trades: list[dict[str, Any]]
