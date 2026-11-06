@@ -133,6 +133,8 @@ class Instrument:
 
 @dataclass(frozen=True)
 class DailyPrice:
+    """Opening permissions; price-limit markers identify limits as the sole blocking cause."""
+
     session: date
     instrument_id: str
     open: Amount | None
@@ -145,6 +147,8 @@ class DailyPrice:
     suspended: bool = False
     corporate_action_gap: bool = False
     adjusted_close: float | None = None
+    buy_blocked_by_price_limit: bool = False
+    sell_blocked_by_price_limit: bool = False
 
 
 @dataclass(frozen=True)
@@ -340,6 +344,14 @@ class Snapshot:
                 raise ValueError("invalid opening permission")
             if not row.evidence and (row.buy_at_open != "unknown" or row.sell_at_open != "unknown"):
                 raise ValueError("known opening permissions require evidence")
+            markers = (
+                (row.buy_blocked_by_price_limit, row.buy_at_open),
+                (row.sell_blocked_by_price_limit, row.sell_at_open),
+            )
+            if any(type(marker) is not bool for marker, _ in markers):
+                raise ValueError("price-limit markers must be booleans")
+            if any(marker and permission != "no" for marker, permission in markers):
+                raise ValueError("price-limit markers require a known blocked opening permission")
             prices = [scaled(x, "price") if x is not None else None for x in (row.open, row.close)]
             if 0 in prices:
                 raise ValueError("raw prices must be positive")
@@ -356,6 +368,16 @@ class Snapshot:
                     "evidence": row.evidence,
                     "suspended": row.suspended,
                     "corporate_action_gap": row.corporate_action_gap,
+                    **(
+                        {"buy_blocked_by_price_limit": True}
+                        if row.buy_blocked_by_price_limit
+                        else {}
+                    ),
+                    **(
+                        {"sell_blocked_by_price_limit": True}
+                        if row.sell_blocked_by_price_limit
+                        else {}
+                    ),
                 }
             )
             if row.adjusted_close is not None:
@@ -541,6 +563,8 @@ class Snapshot:
                     suspended,
                     False,
                     float(r["close"]) * float(r["adj_factor"]),
+                    buy_blocked_by_price_limit=buy_block and not suspended,
+                    sell_blocked_by_price_limit=sell_block and not suspended,
                 )
             )
         if status:

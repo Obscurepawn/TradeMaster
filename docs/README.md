@@ -10,6 +10,7 @@ Start with the question you need to answer. A factor study compares today's sign
 | Select stocks across the A-share market | The [weekly stock-selection example](examples/all-a-momentum.md) ranks historical Shanghai, Shenzhen and Beijing listings and follows the resulting orders. |
 | Compare strategies on the same market | The [TuShare example](examples/tushare-strategies.md) runs weekly momentum, a moving-average crossover and MACD on five stocks. It lists the inputs, commands and measured outcomes. |
 | Backtest a portfolio of target weights | The [daily snapshot API](reference/snapshot-backtest.md) explains decision cutoffs, partial investment, cash reserves and retries. |
+| Download prices or company financials from IndexOne | The [IndexOne guide](reference/indexone.md) shows authenticated queries, immutable Parquet evidence and offline reuse. |
 | Understand a difference between engines | The [same-market comparison](examples/rebalance-comparison.md) lines up dated targets, trades and daily account values. |
 | Diagnose an order or a report | The [execution reference](reference/execution.md) follows the decision, order, settlement and account records across Python and Rust. |
 | Build an A-share factor study | Follow the [research workflow](full-a-factor-research.md), then consult the [quality review](reviews/20260823-m9-full-a-quality-review.md) for gaps in the published historical run. |

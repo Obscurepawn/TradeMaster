@@ -74,6 +74,8 @@ def test_signal_uses_index_points_while_the_account_trades_raw_etf_prices(
     market = json.loads(snapshot.market_path.read_text())
     assert len(market["cash_dividends"]) == 1
     assert market["rows"][1]["buy_reason"] == "upper_limit"
+    assert market["rows"][1]["buy_blocked_by_price_limit"] is True
+    assert "sell_blocked_by_price_limit" not in market["rows"][1]
     assert market["rows"][1]["sell_at_open"] == "yes"
     monkeypatch.setattr(data, "NORMALIZED_MARKET_SHA256", "0" * 64)
     with pytest.raises(ValueError, match="hash"):

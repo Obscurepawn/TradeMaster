@@ -193,6 +193,8 @@ def prepare_snapshot(directory: Path) -> Snapshot:
                 buy_reason="upper_limit" if opening == upper else None,
                 sell_reason="lower_limit" if opening == lower else None,
                 evidence=f"tushare:fund_daily+{evidence}",
+                buy_blocked_by_price_limit=opening == upper,
+                sell_blocked_by_price_limit=opening == lower,
             )
         )
         when = datetime.combine(day, time(15), timezone(timedelta(hours=8)))

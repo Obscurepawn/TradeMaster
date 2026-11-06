@@ -16,6 +16,26 @@ The JSON runner receives instrument specifications, a fee schedule, timestamped 
 
 On the event path, target-weight batches sum to one when invested or zero for an exit. The open contributes to sizing.
 
+The event request accepts `enforce_price_limits`, which defaults to `true`.
+Set it to `false` to stop rejecting buys at the supplied upper limit and sells
+at the lower limit. Both `up_limit_scaled` and `down_limit_scaled` may then be
+omitted. When either is supplied, supply both as positive ordered amounts.
+Enforcement enabled requires both limits. The Rust `MarketBar` represents absent
+limits as `None`; direct validator users select the same behavior with
+`CnAshareOrderValidator::new(fees).with_price_limits(false)`. Timing, suspension,
+lot-size, cash and sellable-share checks remain active.
+
+Lot size and share availability are configured on each instrument:
+`buy_lot_size: 1` permits whole-share trades and `settlement: "t0"` makes newly
+bought shares immediately sellable. This availability setting does not model
+cash or securities clearing settlement. Set `sell_stamp_duty_ppm` and
+`sse_transfer_fee_ppm` to zero to disable those charges. A zero commission rate
+is valid; set `minimum_commission_scaled` to `"0"` as well for zero commission.
+The account remains long-only, with integral shares and no margin model.
+
+Saved requests include `enforce_price_limits: false` when selected. The default
+`true` is omitted, preserving existing request serialization and replay hashes.
+
 To trace a rejected order in the saved JSON, read its `code` and `message` in `rejections`. Match its `order_id` to `orders` for the instrument and side. For a price-limit rejection, use its `event_time` to find the `session_open` event in the request, then read that instrument’s `open_scaled`, `up_limit_scaled` and `down_limit_scaled`. Fills also carry `order_id` and `event_time`, alongside the executed quantity, price and costs.
 
 ## Replay the three-session example

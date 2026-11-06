@@ -10,11 +10,19 @@ from datetime import datetime
 from decimal import ROUND_DOWN, Decimal
 from itertools import pairwise
 from pathlib import Path
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from trademaster import _native
 from trademaster.contracts import SnapshotManifest, _require_utc
@@ -68,7 +76,7 @@ class RunnerInstrument(_FrozenModel):
 
 class RunnerFeeSchedule(_FrozenModel):
     schedule_id: str = Field(min_length=1)
-    commission_ppm: int = Field(gt=0, le=1_000_000)
+    commission_ppm: int = Field(ge=0, le=1_000_000)
     minimum_commission_scaled: str
     sell_stamp_duty_ppm: int = Field(ge=0, le=1_000_000)
     sse_transfer_fee_ppm: int = Field(ge=0, le=1_000_000)
@@ -86,8 +94,8 @@ class RunnerBar(_FrozenModel):
     low_scaled: str
     close_scaled: str
     volume_units: str
-    up_limit_scaled: str
-    down_limit_scaled: str
+    up_limit_scaled: str | None = None
+    down_limit_scaled: str | None = None
     trading_status: Literal["tradable", "suspended"]
     status_evidence_id: str = Field(min_length=1)
 
@@ -97,9 +105,33 @@ class RunnerBar(_FrozenModel):
         "low_scaled",
         "close_scaled",
         "volume_units",
-        "up_limit_scaled",
-        "down_limit_scaled",
     )(_canonical_integer)
+
+    @field_validator("up_limit_scaled", "down_limit_scaled")
+    @classmethod
+    def validate_optional_integer(cls, value: str | None) -> str | None:
+        return None if value is None else _canonical_integer(value)
+
+    @model_validator(mode="after")
+    def validate_price_limits(self) -> Self:
+        if self.up_limit_scaled is None and self.down_limit_scaled is None:
+            return self
+        if (
+            self.up_limit_scaled is None
+            or self.down_limit_scaled is None
+            or int(self.down_limit_scaled) <= 0
+            or int(self.up_limit_scaled) < int(self.down_limit_scaled)
+        ):
+            raise ValueError("price limits must be a positive ordered pair")
+        return self
+
+    @model_serializer(mode="wrap")
+    def serialize_price_limits(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name in ("up_limit_scaled", "down_limit_scaled"):
+            if data.get(name) is None:
+                data.pop(name, None)
+        return data
 
 
 class RunnerEvent(_FrozenModel):
@@ -147,6 +179,7 @@ class RunnerRequest(_FrozenModel):
     instruments: tuple[RunnerInstrument, ...]
     fee_schedule: RunnerFeeSchedule
     slippage_ppm: int = Field(ge=0, le=1_000_000)
+    enforce_price_limits: bool = True
     session_opens: tuple[datetime, ...]
     events: tuple[RunnerEvent, ...]
     signals: tuple[RunnerSignal, ...]
@@ -178,10 +211,21 @@ class RunnerRequest(_FrozenModel):
             bar.instrument_id not in instrument_ids for event in self.events for bar in event.bars
         ) or any(signal.instrument_id not in instrument_ids for signal in self.signals):
             raise ValueError("runner input references an unknown instrument")
+        if self.enforce_price_limits and any(
+            bar.up_limit_scaled is None for event in self.events for bar in event.bars
+        ):
+            raise ValueError("price limits are required when enforcement is enabled")
         signal_ids = tuple(signal.signal_id for signal in self.signals)
         if len(signal_ids) != len(set(signal_ids)):
             raise ValueError("runner signal IDs must be unique")
         return self
+
+    @model_serializer(mode="wrap")
+    def serialize_price_limit_policy(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.enforce_price_limits:
+            data.pop("enforce_price_limits", None)
+        return data
 
 
 def _event_phase(kind: str) -> int:

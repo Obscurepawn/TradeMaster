@@ -15,6 +15,14 @@ from .coverage import (
     ProviderPage,
     RequestResolver,
 )
+from .indexone import IndexOneDataSource
+from .indexone_client import (
+    IndexOneClient,
+    IndexOneCredentialError,
+    IndexOneDataError,
+    IndexOneError,
+    IndexOneRequestError,
+)
 from .object_store import ObjectIntegrityError, ParquetObjectStore, PublishedObject
 from .registry import (
     CanonicalFieldType,
@@ -49,6 +57,12 @@ __all__ = [
     "DatasetRegistry",
     "DatasetSpec",
     "DuckDbCatalog",
+    "IndexOneClient",
+    "IndexOneCredentialError",
+    "IndexOneDataError",
+    "IndexOneDataSource",
+    "IndexOneError",
+    "IndexOneRequestError",
     "ObjectIntegrityError",
     "ParquetObjectStore",
     "ProviderPage",

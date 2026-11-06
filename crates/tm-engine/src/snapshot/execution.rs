@@ -5,21 +5,28 @@ enum OpenOutcome {
     Reject(String),
     Missing(String),
 }
-fn check_open(row: Option<Opening<'_>>, cap: Option<i128>) -> OpenOutcome {
+fn check_open(
+    row: Option<Opening<'_>>,
+    cap: Option<i128>,
+    enforce_price_limits: bool,
+) -> OpenOutcome {
     let Some(row) = row else {
         return OpenOutcome::Missing("missing_open_row".into());
     };
     if !row.documented {
         return OpenOutcome::Missing("missing_open_evidence".into());
     }
+    if row.corporate_action_gap {
+        return OpenOutcome::Missing("corporate_action_gap".into());
+    }
     match row.permission {
         Permission::Unknown => {
             return OpenOutcome::Missing(row.reason.unwrap_or("unknown_open_status").into());
         }
-        Permission::No => {
+        Permission::No if enforce_price_limits || !row.blocked_by_price_limit => {
             return OpenOutcome::Reject(row.reason.unwrap_or("blocked_at_open").into());
         }
-        Permission::Yes => (),
+        Permission::Yes | Permission::No => (),
     }
     if row.suspended {
         return OpenOutcome::Reject("suspended".into());
@@ -44,6 +51,7 @@ pub(super) fn execute_plan<'a>(
     batch_index: usize,
     sizing: Sizing,
     out: &mut SnapshotResult,
+    enforce_price_limits: bool,
     detail: bool,
     feedback: bool,
 ) -> Result<bool, SnapshotError> {
@@ -79,7 +87,13 @@ pub(super) fn execute_plan<'a>(
         .plans
         .iter()
         .map(|plan| {
-            (plan.quantity > 0).then(|| check_open(at_open(&plan.instrument, plan.side), plan.cap))
+            (plan.quantity > 0).then(|| {
+                check_open(
+                    at_open(&plan.instrument, plan.side),
+                    plan.cap,
+                    enforce_price_limits,
+                )
+            })
         })
         .collect();
     let missing = sizing

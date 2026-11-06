@@ -17,6 +17,7 @@ For one point-in-time query, start with `DataPortal`. For a multi-year acquisiti
 | [tushare_replay.py](../../python/trademaster/data/tushare_replay.py) | `validate_tushare_raw_request_scope` and `validate_tushare_staging_replay` compare stored provenance with the actual request and raw values. |
 | [status.py](../../python/trademaster/data/status.py) | `latest_status_rows` resolves competing revisions of a daily trading status. |
 | [research.py](../../python/trademaster/data/research.py) | `ResearchDataSource` returns a `ResearchQueryResult` with `ResearchObjectEvidence`. `TushareQueryClient` describes the provider call made by the research cache. |
+| [indexone.py](../../python/trademaster/data/indexone.py) | `IndexOneDataSource` implements that research interface with a separate verified Parquet response cache. [Usage and data scope](indexone.md) · [HTTP client](../../python/trademaster/data/indexone_client.py) |
 
 Tests isolate [request validation](../../tests/test_contract_validation.py), [paths and field registration](../../tests/test_data_config_registry.py), [coverage and pagination](../../tests/test_coverage_portal.py), [catalog transactions](../../tests/test_duckdb_catalog.py), [object integrity](../../tests/test_parquet_object_store.py), [as-of snapshot reads](../../tests/test_pit_snapshot.py) and [provider normalization and source replay](../../tests/test_tushare_provider.py).
 

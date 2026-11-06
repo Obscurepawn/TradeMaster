@@ -450,11 +450,7 @@ impl CnFeeSchedule {
         schedule_id: impl Into<String>,
     ) -> Result<Self, ExecutionError> {
         let schedule_id = schedule_id.into();
-        if commission_ppm == 0
-            || minimum_commission_scaled < 0
-            || rounding_unit_scaled <= 0
-            || schedule_id.is_empty()
-        {
+        if minimum_commission_scaled < 0 || rounding_unit_scaled <= 0 || schedule_id.is_empty() {
             return Err(ExecutionError::Failed(
                 "fee schedule parameters are invalid".to_owned(),
             ));
@@ -547,6 +543,7 @@ impl CnFeeSchedule {
 pub struct CnAshareOrderValidator<F> {
     fee_schedule: F,
     slippage_ppm: u32,
+    enforce_price_limits: bool,
 }
 
 impl<F> CnAshareOrderValidator<F> {
@@ -554,6 +551,7 @@ impl<F> CnAshareOrderValidator<F> {
         Self {
             fee_schedule,
             slippage_ppm: 0,
+            enforce_price_limits: true,
         }
     }
 
@@ -566,7 +564,14 @@ impl<F> CnAshareOrderValidator<F> {
         Ok(Self {
             fee_schedule,
             slippage_ppm,
+            enforce_price_limits: true,
         })
+    }
+
+    /// Enable or disable daily price limits; all other validation remains active.
+    pub const fn with_price_limits(mut self, enforce: bool) -> Self {
+        self.enforce_price_limits = enforce;
+        self
     }
 }
 
@@ -645,14 +650,24 @@ impl<F: FeeSchedule> OrderValidator for CnAshareOrderValidator<F> {
                 "invalid_quantity",
             );
         }
-        match order.intent().side() {
-            Side::Buy if bar.open >= bar.up_limit => {
-                return Self::reject(order, event_time, RejectionCode::LimitUp, "limit_up");
+        if self.enforce_price_limits {
+            let (Some(up_limit), Some(down_limit)) = (bar.up_limit, bar.down_limit) else {
+                return Self::reject(
+                    order,
+                    event_time,
+                    RejectionCode::MissingMarketData,
+                    "missing_price_limits",
+                );
+            };
+            match order.intent().side() {
+                Side::Buy if bar.open >= up_limit => {
+                    return Self::reject(order, event_time, RejectionCode::LimitUp, "limit_up");
+                }
+                Side::Sell if bar.open <= down_limit => {
+                    return Self::reject(order, event_time, RejectionCode::LimitDown, "limit_down");
+                }
+                _ => {}
             }
-            Side::Sell if bar.open <= bar.down_limit => {
-                return Self::reject(order, event_time, RejectionCode::LimitDown, "limit_down");
-            }
-            _ => {}
         }
         let accepted = AcceptedOrder::try_new(order.clone(), event_time)
             .expect("validated event time is on or after submission");

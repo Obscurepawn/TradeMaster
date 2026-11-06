@@ -44,6 +44,13 @@ impl<'a> PreparedMarket<'a> {
         let instruments = index_instruments(data.instruments.clone())?;
         let mut rows = vec![Rows::new(); data.sessions.len()];
         for row in &data.rows {
+            if (row.buy_blocked_by_price_limit && !matches!(row.buy_at_open, Permission::No))
+                || (row.sell_blocked_by_price_limit && !matches!(row.sell_at_open, Permission::No))
+            {
+                return Err(invalid(
+                    "a price-limit marker requires a known blocked permission",
+                ));
+            }
             let day = index
                 .get(row.session.as_str())
                 .and_then(|&i| rows.get_mut(i))

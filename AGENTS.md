@@ -6,7 +6,10 @@ For strategy implementation, historical data imports, TuShare setup or backtest 
 
 TradeMaster supports reproducible research and backtesting for A-shares and ETFs. Python
 collects Tushare data, runs point-in-time queries, computes factors and signals,
-and produces reports. In a daily snapshot backtest, the Rust extension calls Python at scheduled
+and produces reports. The IndexOne research source also downloads prices,
+company financials, securities and FX into immutable Parquet; its observations
+need explicit trading evidence before use in a daily data snapshot.
+In a daily snapshot backtest, the Rust extension calls Python at scheduled
 closes with actual account values and recent fills. Python returns complete
 portfolio weights. Rust plans orders from prior closes, checks the next open,
 and maintains cash, holdings and dividend receivables. Saved event requests use a separate event loop

@@ -49,6 +49,11 @@ pub struct DailyRow {
     pub suspended: bool,
     #[serde(default)]
     pub corporate_action_gap: bool,
+    /// The known blocked permission on this side is caused only by a price limit.
+    #[serde(default)]
+    pub buy_blocked_by_price_limit: bool,
+    #[serde(default)]
+    pub sell_blocked_by_price_limit: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -89,6 +94,12 @@ pub struct Policy {
     pub slippage_ppm: u32,
     pub buy_cap_ppm: u32,
     pub max_attempts: u32,
+    #[serde(default = "enforce_price_limits_by_default")]
+    pub enforce_price_limits: bool,
+}
+
+fn enforce_price_limits_by_default() -> bool {
+    true
 }
 
 #[derive(Debug, Serialize)]

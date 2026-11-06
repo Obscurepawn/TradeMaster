@@ -237,8 +237,10 @@ pub struct MarketBar {
     pub low: Fixed8,
     pub close: Fixed8,
     pub volume: Quantity,
-    pub up_limit: Fixed8,
-    pub down_limit: Fixed8,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub up_limit: Option<Fixed8>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_limit: Option<Fixed8>,
     pub trading_status: TradingStatus,
     pub status_evidence_id: String,
 }

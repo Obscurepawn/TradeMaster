@@ -12,13 +12,78 @@ Use a snapshot backtest to ask what a long-only portfolio could hold after a seq
 | `Instrument`, `DailyPrice`, `Feature` | The instrument sets venue, lot, price tick, settlement and listing dates. One daily row supplies raw prices, separate buy/sell permissions, supporting evidence and optional reasons. A blocked order without a supplied reason is recorded as `blocked_at_open`. A feature carries its name, version, value and publication time. |
 | `snapshot.day(session)` → `DecisionDay` | Exposes the instruments listed that day. `closes(symbol, adjusted=False, limit=None)` returns prices through the decision close. A positive `limit` reads just the last N sessions, keeping missing values in place. `scores(name)` selects the latest value published by the cutoff for each eligible instrument. |
 
-Supply raw and adjusted closes that were available at the listed close time. For observations released later, supply a feature with its actual publication time. The cutoff applies to what Python can use to make a decision. Rust separately reads that snapshot's raw execution and valuation rows. A feature published after Friday's cutoff first becomes usable at a later decision. Set `DailyPrice.corporate_action_gap` for an unexplained change in raw price, such as a split without a share adjustment. A run holding that security stops at the first affected session. Each strategy callback receives a `BacktestDay` with the decision-day market view, the closing account and fills since the previous callback. [Snapshot implementation](../../python/trademaster/backtest/snapshot.py) · [Cutoff and snapshot integrity tests](../../tests/test_snapshot_backtest.py)
+Supply raw and adjusted closes that were available at the listed close time. For observations released later, supply a feature with its actual publication time. The cutoff applies to what Python can use to make a decision. Rust separately reads that snapshot's raw execution and valuation rows. A feature published after Friday's cutoff first becomes usable at a later decision. Set `DailyPrice.corporate_action_gap` for an unexplained change in raw price, such as a split without a share adjustment. A run holding that security or planning an order in it stops before trading at the affected open. Each strategy callback receives a `BacktestDay` with the decision-day market view, the closing account and fills since the previous callback. [Snapshot implementation](../../python/trademaster/backtest/snapshot.py) · [Cutoff and snapshot integrity tests](../../tests/test_snapshot_backtest.py)
+
+### Configurable trading rules
+
+`Instrument` owns lot size, price tick, currency and purchased-share availability.
+`buy_lot_size=1` permits integral-share orders; `settlement="t0"` makes newly bought
+shares sellable immediately, whereas `"t1"` uses the next supplied trading session.
+Initial lots retain their explicit `sellable_session` in either case. Clearing
+and cash-settlement restrictions are separate from this share-availability rule.
+
+`Policy.enforce_price_limits` defaults to `True`. Setting it to `False` lifts only
+a known blocked side carrying the corresponding `DailyPrice` marker:
+
+| Market evidence | With enforcement on | With enforcement off |
+|---|---|---|
+| `buy_at_open="no"`, `buy_blocked_by_price_limit=True` | Reject the buy with its supplied reason. | Continue with suspension, opening-price, cap and cash checks. |
+| `sell_at_open="no"`, `sell_blocked_by_price_limit=True` | Reject the sell with its supplied reason. | Continue with suspension and opening-price checks; sellable quantity still limits the order. |
+| An unmarked `"no"` | Reject. | Reject. |
+| `"unknown"`, missing evidence or missing opening price | Report `insufficient_data` when needed by an order. | Same requirement. |
+
+Markers default to `False`, must be booleans and can be true only for a `"no"`
+permission. A producer sets one only when a documented daily price limit is the
+sole cause of that side's block. Rejection text is descriptive and is never used
+to decide whether to bypass a rule. Suspension and corporate-action gaps still
+prevent a fill even if a contradictory row carries a marker.
+
+The TuShare demo, long-history, broad-ETF and full-A publishers add markers when
+the source evidence proves a price-limit block. Existing saved snapshots retain
+their old permissions and hashes. Publish a new data snapshot from verified
+source data to make an old limit block configurable. New run requests record
+`enforce_price_limits=False`; omitted settings replay with enforcement on.
+
+Fees remain numeric parameters. Set `sell_stamp_duty_ppm=0` and
+`sse_transfer_fee_ppm=0` to disable those A-share charges; zero commission requires
+both `commission_ppm=0` and `minimum_commission=0`. For another market, set costs
+explicitly, use the desired currency and provide its sessions and timezone-aware
+`close_times`. Otherwise the A-share defaults remain active. `buy_cap_ppm`
+controls a separate order price cap and still applies with limit enforcement off.
+Prices, money and results use the snapshot's common currency without FX conversion.
+The daily planner still fixes order quantities from prior marks before reading
+the opening price, reserves cash separately and makes sale proceeds available to
+the next open's buy budget.
+
+The [configuration example](../../specs/examples/trading_rules.py) runs the same
+synthetic USD stock twice, with one-share lots, immediate resale eligibility and
+zero fees. A Friday close decision first tries to buy at Monday's open. Run it
+from the repository root after installing the SDK:
+
+```bash
+uv run python specs/examples/trading_rules.py
+```
+
+```text
+enforce_price_limits=True fills=0 quantity=0 cash=100.00 USD
+enforce_price_limits=False fills=1 quantity=7 cash=30.00 USD
+```
+
+The daily model uses one currency, one open and one close per supplied session,
+with long-only whole-share holdings. Intraday trading, shorting, margin,
+fractional shares, US regulatory fee schedules and broker-specific account
+restrictions require further implementation.
 
 ### Cash dividends
 
 Pass a `CashDividend(instrument_id, record_session, ex_session, pay_session, amount_per_share)` for each distribution. The snapshot's `sessions` must include `record_session`, and the dates must satisfy `record_session < ex_session <= pay_session`. Rust counts the units held at the record close, including purchases that day. Before sizing on the ex-date, it subtracts the dividend per unit from the previous valuation price and adds the entitlement to equity. Selling at the ex-date open preserves the entitlement.
 
-Closing equity equals cash plus the market value of holdings plus outstanding dividend receivables. On the pay date, Rust credits cash at the close. The next open can spend it. `day.account.dividend_receivable` exposes the unpaid amount in CNY. A daily row in `result.equity` omits `dividend_receivable` when it is zero. `result.dividends` lists the entitlements and payment status in Rust wire units. A receivable remains in equity if payment falls beyond the sample. [Dividend ledger](../../crates/tm-engine/src/snapshot/dividends.rs)
+Distributions with other date ordering are unsupported. Preserve the vendor's
+dates and flag affected observations with `DailyPrice.corporate_action_gap`
+instead of moving dates to pass validation. Adjusted research prices alone do
+not account for distributions or splits in the share ledger.
+
+Closing equity equals cash plus the market value of holdings plus outstanding dividend receivables. On the pay date, Rust credits cash at the close. The next open can spend it. `day.account.dividend_receivable` exposes the unpaid amount in the snapshot's currency. A daily row in `result.equity` omits `dividend_receivable` when it is zero. `result.dividends` lists the entitlements and payment status in Rust wire units. A receivable remains in equity if payment falls beyond the sample. [Dividend ledger](../../crates/tm-engine/src/snapshot/dividends.rs)
 
 To start a study on an ex-date with an existing entitlement, extend the snapshot back to the record session. `InitialAccount` accepts only cash and dated lots, with no field for opening receivables. If the record session is the first day, initialize it with the actual cash and lots held at that close, preserving each lot's sellable date. A target submitted at that close first trades at the following open.
 
@@ -83,9 +148,15 @@ For recurring decisions, define `on_close(day)` and choose `schedule="daily_clos
 
 Cash-only runs take `initial_cash`. For an opening portfolio, supply `initial_account` with cash and dated lots. A future sellable date within the supplied calendar must be a trading session. A lot that unlocks beyond the calendar contributes to daily equity and remains locked for the run.
 
-`BacktestResult.equity` and the summary monetary values are in CNY. `result.raw` preserves the Rust units. The summary includes valued versus requested sessions, total costs and batch outcome counts. `detail=True` also retains attempts, orders, fills and positions. Inspect the associated attempt record when a target expires. The [Python SDK tests](../../tests/test_snapshot_backtest.py) compare callback and precomputed inputs. The [same-market comparison](../../python/trademaster/e2e/compare_rebalance.py) matches decision dates and weights before comparing fills, holdings and timings. [Comparison regression](../../tests/test_rebalance_comparison.py)
+`BacktestResult.equity` and the summary monetary values use the snapshot's currency. `result.raw` preserves the Rust units. The summary includes valued versus requested sessions, total costs and batch outcome counts. `detail=True` also retains attempts, orders, fills and positions. Inspect the associated attempt record when a target expires. The [Python SDK tests](../../tests/test_snapshot_backtest.py) compare callback and precomputed inputs. The [same-market comparison](../../python/trademaster/e2e/compare_rebalance.py) matches decision dates and weights before comparing fills, holdings and timings. [Comparison regression](../../tests/test_rebalance_comparison.py)
 
 ### Missing prices and opening evidence
+
+`DailyPrice` defaults both `buy_at_open` and `sell_at_open` to `"yes"`. A loader
+must explicitly set a side to `"unknown"` when the source lacks evidence of its
+opening status. Supplying an OHLC row or source identifier alone does not prove
+permission to trade through a halt. Set a known blocked side to `"no"` and record
+its reason; use `"yes"` only with supporting evidence.
 
 Each session supplies a new set of valuation prices. An instrument normally uses its raw close. For a row with `suspended=True` and a nonempty `evidence` reference, Rust carries the previous session's valuation price if one exists and sets `carried_mark=True` on the detailed position. An unexplained missing row or close leaves the instrument without a valuation price for that session.
 
@@ -94,7 +165,7 @@ If the run stops with `insufficient_data`, inspect `result.raw["first_issue"]` f
 | Phase | What stopped the run |
 |---|---|
 | `sizing` | A target needs a price for an instrument missing from the previous session's valuations. Rust reports `missing_previous_close` before sending orders, even if the instrument traded at an earlier close. |
-| `open` | A planned order has an unknown side permission, lacks supporting evidence or needs a missing opening price. No orders fill in that attempt. A flagged corporate-action gap on an existing holding also stops the run before trading. |
+| `open` | A planned order has an unknown side permission, lacks supporting evidence or needs a missing opening price. No orders fill in that attempt. A flagged corporate-action gap on an existing holding or planned order also stops the run before trading. |
 | `close` | A holding has no valid valuation (`missing_close`) or has a flagged corporate-action gap. Rust keeps that day's completed fills and stops before publishing closing equity or calling the strategy. |
 
 ## Save and replay

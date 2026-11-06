@@ -1,12 +1,12 @@
 # TradeMaster
 
-TradeMaster is a Python and Rust backtesting toolkit for Chinese A-shares and ETFs. At each scheduled close, a Python strategy sees its holdings and recent fills and chooses portfolio weights. Rust uses the same daily snapshot to calculate orders, simulate fills and track the account after fees. Interactive HTML reports show returns against a benchmark, drawdowns and trading costs. The research tools evaluate factors across the historical A-share universe.
+TradeMaster backtests Python portfolio strategies with a Rust engine and provides factor research tools for A-shares. A strategy chooses weights at scheduled closes; the engine calculates orders, simulates fills and tracks the account after fees.
 
-**Data sources.** TuShare Pro is the only built-in historical data provider. Set `TUSHARE_TOKEN` to download its data once, then run the saved snapshot offline. To use data from another source, supply your own sessions, instruments, daily prices and optional features to `Snapshot.create`. [Snapshot inputs](docs/reference/snapshot-backtest.md#market-inputs-and-decision-timing)
+**Data sources.** TuShare Pro supplies the built-in A-share and ETF workflows through `TUSHARE_TOKEN`. [IndexOne](#download-indexone-data) supplies daily prices, company financials, security reference data and FX through `INDEXONE_API_KEY`. Both retain downloaded data for offline reuse. To prepare a backtest, map the source observations and trading evidence into a [data snapshot](docs/reference/snapshot-backtest.md#market-inputs-and-decision-timing).
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB)](https://www.python.org/) [![Rust 1.97+](https://img.shields.io/badge/Rust-1.97%2B-924514)](https://www.rust-lang.org/) [![Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue)](LICENSE)
 
-[Run the example](#run-the-example) · [A-share trading rules](#a-share-trading-rules) · [Write a strategy](#write-a-strategy) · [Fifteen-year benchmark](#fifteen-year-benchmark) · [Backtest reports](#backtest-reports) · [Research a factor](#research-a-factor) · [Use a coding agent](#use-a-coding-agent) · [Documentation](docs/README.md)
+[Run the example](#run-the-example) · [A-share trading rules](#a-share-trading-rules) · [US stock backtests](#backtest-a-us-stock-strategy) · [IndexOne data](#download-indexone-data) · [Write a strategy](#write-a-strategy) · [Fifteen-year benchmark](#fifteen-year-benchmark) · [Backtest reports](#backtest-reports) · [Research a factor](#research-a-factor) · [Use a coding agent](#use-a-coding-agent) · [Documentation](docs/README.md)
 
 ## Run the example
 
@@ -47,6 +47,134 @@ The daily backtest checks each planned order against the stock’s trading statu
 In the 30-session TuShare example, 49 of 63 orders filled. Suspensions blocked five orders. One buy was rejected because the stock opened at its upper limit. Eight other buys were rejected because the opening price exceeded the strategy’s own cap. [Orders and results](docs/examples/all-a-momentum.md#from-selection-to-fills)
 
 The full-A example ranks Shanghai, Shenzhen and Beijing listings. It marks opening permissions as unknown for STAR Market and Beijing stocks, whose order sizes follow different rules. If a planned order needs unknown opening data, the run reports `insufficient_data` before posting any fills for that open. [Snapshot API](docs/reference/snapshot-backtest.md) · [Execution and ledger tests](crates/tm-engine/tests/snapshot_backtest.rs)
+
+For another market, configure the instrument's trading units and the run's
+costs explicitly. The [rule reference](docs/reference/snapshot-backtest.md#configurable-trading-rules)
+explains the settings and includes a price-limit switch comparison.
+
+## Backtest a US stock strategy
+
+Use the daily snapshot SDK for a long-only, whole-share USD portfolio. The
+[US stock example](specs/examples/us_stock_backtest.py) creates five synthetic
+sessions and runs a strategy that targets 80% after a rising close and cash after
+a flat or falling close. It uses zero fees and slippage to make the account easy
+to check; these are example assumptions, not a broker's fee schedule.
+
+From the repository root:
+
+```bash
+uv sync --locked
+uv run python specs/examples/us_stock_backtest.py
+uv run tm-replay artifacts/us-stock-demo/run/request.json
+```
+
+The strategy command prints:
+
+```text
+2024-01-04 buy 76 @ 102.00 USD
+2024-01-05 sell 76 @ 101.00 USD
+Final equity: 9924.00 USD
+```
+
+At the January 3 close the strategy sees 102 after 100 and requests an 80% weight.
+The first eligible fill is January 4's open. Before checking that open, Rust
+calculates a 78-share target from the prior close and fixes the buy order at 76
+shares within the USD 8,000 budget and 2% buy cap. It then reserves USD 7,907.04;
+the fill costs USD 7,752. January 4's falling close requests an exit at January 5's
+open. The example saves a data snapshot under `artifacts/us-stock-demo/snapshot`
+and the request and result under `artifacts/us-stock-demo/run`. Replay prints the
+recalculated ledger as JSON; compare it with `result.json`.
+
+### Use an existing US data snapshot
+
+For historical US data, download observations with [IndexOne](#download-indexone-data)
+or use another source, then prepare a data snapshot with your own loader.
+The [data preparation guide](.skills/trademaster-backtest/references/data-sources.md#prepare-a-us-stock-data-snapshot)
+covers USD instruments, exchange sessions, New York close times and source
+records. When trading status is missing, the loader must explicitly set the
+affected buy/sell permission to `"unknown"`.
+
+The following command opens the snapshot from the example above and runs the
+same strategy again. To use your history, replace `snapshot_path` and `symbol`
+with the directory and instrument ID produced by your loader. The example
+strategy needs adjusted closes. Set the commission and slippage for your study;
+the zeros below retain the demonstration's assumptions.
+
+```bash
+uv run python - <<'PY'
+from specs.examples.us_stock_backtest import CloseMomentum
+from trademaster.backtest import Policy, Snapshot, backtest
+
+snapshot_path = "artifacts/us-stock-demo/snapshot"
+symbol = "DEMO.US"
+market = Snapshot.open(snapshot_path)
+policy = Policy(
+    enforce_price_limits=False,
+    sell_stamp_duty_ppm=0,
+    sse_transfer_fee_ppm=0,
+    commission_ppm=0,
+    minimum_commission=0,
+    slippage_ppm=0,
+    buy_cap_ppm=20_000,
+)
+result = backtest(
+    market,
+    CloseMomentum(symbol),
+    initial_cash=10_000,
+    policy=policy,
+    detail=True,
+)
+result.save("artifacts/us-stock-rerun")
+print(f"{result.summary['status']}: {len(result.fills)} fills, "
+      f"{result.equity[-1]['equity']:.2f} USD")
+PY
+uv run tm-replay artifacts/us-stock-rerun/request.json
+```
+
+Replace `CloseMomentum` with your own `on_close(day)` strategy. Add
+`schedule="week_end"` to `backtest` for weekly callbacks. Dated target portfolios
+use the separate [`targets=` input](docs/reference/snapshot-backtest.md#targets-and-the-daily-account).
+Snapshot runs save JSON; see [Backtest reports](#backtest-reports) for the event
+workflow's HTML output.
+
+Before using historical data, check the [execution scope](docs/reference/snapshot-backtest.md#configurable-trading-rules)
+and [cash-dividend requirements](docs/reference/snapshot-backtest.md#cash-dividends),
+including unsupported corporate actions and broker account rules.
+
+## Download IndexOne data
+
+Set `INDEXONE_API_KEY` in your shell to the secret value of an IndexOne team key.
+From the repository root, this query downloads Apple's daily observations into
+Parquet and prints the returned row count and evidence path. Repeating it reads
+the same local cache.
+
+```bash
+uv sync --locked
+uv run python - <<'PY'
+from pathlib import Path
+from trademaster.data import IndexOneDataSource
+
+with IndexOneDataSource(root=Path("data/indexone")) as source:
+    prices = source.query_with_evidence(
+        "eod",
+        params={"filters": [
+            {"field": "id", "operator": "eq", "value": "BBG000B9XRY4"},
+            {"field": "date", "operator": "gte", "value": "2024-01-02"},
+            {"field": "date", "operator": "lte", "value": "2024-01-05"},
+        ]},
+        fields=("id", "date", "open", "close", "volume", "adjClose"),
+        page_limit=10000,
+    )
+    print(f"{prices.table.num_rows} rows")
+    print(prices.evidence.path)
+PY
+```
+
+The [IndexOne guide](docs/reference/indexone.md) covers financial statements,
+security identifiers, the `tm-indexone` command, offline reads and refreshes.
+These are source observations: a US backtest still needs exchange sessions,
+opening permissions and corporate-action coverage. The guide explains the
+publication-time checks needed before using financial data in a strategy.
 
 ## Write a strategy
 
@@ -241,6 +369,10 @@ With a full-A snapshot already prepared, you can ask the agent to implement a st
 > Read `.skills/trademaster-backtest/SKILL.md`. Implement a weekly strategy that buys the five A-shares with the highest 20-session returns. Use the saved full-A snapshot and show the first decision, its orders and the fills.
 
 The same skill covers publishing a snapshot from your own data, preparing TuShare history, and opening an event run’s HTML report. Agents that read the root `AGENTS.md` can find the skill there. [TradeMaster backtesting skill](.skills/trademaster-backtest/SKILL.md)
+
+For a US strategy, identify the source data or an existing USD data snapshot:
+
+> Read `.skills/trademaster-backtest/SKILL.md`. Prepare a USD data snapshot from my US equity Parquet files, use whole-share orders and explicit fees, and run a weekly momentum strategy. Show the decision dates, first eligible fills and saved replay. Preserve missing trading-status evidence as unknown.
 
 To use the named shortcut `$trademaster-backtest` in Codex, link the skill once from the repository root on Linux, macOS or WSL. Then open a chat in this checkout and include the shortcut in your request.
 

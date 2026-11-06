@@ -46,6 +46,7 @@ def _price(
     buy: Permission = "unknown"
     sell: Permission = "unknown"
     buy_reason = sell_reason = None
+    buy_limit = sell_limit = False
     if action_gap:
         buy_reason = sell_reason = "corporate_action_gap"
     elif suspended:
@@ -64,6 +65,7 @@ def _price(
     ):
         buy = "yes" if opening < upper else "no"
         sell = "yes" if opening > lower else "no"
+        buy_limit, sell_limit = buy == "no", sell == "no"
         buy_reason = None if buy == "yes" else "limit_up_at_open"
         sell_reason = None if sell == "yes" else "limit_down_at_open"
     else:
@@ -81,6 +83,8 @@ def _price(
         suspended=suspended,
         corporate_action_gap=action_gap,
         adjusted_close=close * factor if close and factor and factor > 0 else None,
+        buy_blocked_by_price_limit=buy_limit,
+        sell_blocked_by_price_limit=sell_limit,
     )
 
 

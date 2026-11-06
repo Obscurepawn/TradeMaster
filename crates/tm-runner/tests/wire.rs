@@ -85,3 +85,82 @@ fn wire_accepts_target_weight_and_sizes_at_the_authoritative_open_nav() {
     assert_eq!(result["execution_count"], 1);
     assert_eq!(result["fills"][0]["quantity"], "200");
 }
+
+#[test]
+fn optional_limit_policy_preserves_default_request_serialization() {
+    let original = request();
+    let parsed: tm_runner::RunnerRequest = serde_json::from_value(original.clone()).unwrap();
+    assert_eq!(serde_json::to_value(parsed).unwrap(), original);
+    let mut explicit = original.clone();
+    explicit["enforce_price_limits"] = json!(true);
+    let parsed: tm_runner::RunnerRequest = serde_json::from_value(explicit).unwrap();
+    assert_eq!(serde_json::to_value(parsed).unwrap(), original);
+}
+
+#[test]
+fn whole_share_t0_zero_fee_run_needs_no_price_limits_when_disabled() {
+    let mut input = request();
+    input["enforce_price_limits"] = json!(false);
+    input["instruments"][0]["venue"] = json!("nasdaq");
+    input["instruments"][0]["currency"] = json!("USD");
+    input["instruments"][0]["buy_lot_size"] = json!(1);
+    input["instruments"][0]["settlement"] = json!("t0");
+    input["signals"][0]["value_scaled"] = json!("100000000");
+    input["slippage_ppm"] = json!(0);
+    for rate in [
+        "commission_ppm",
+        "sell_stamp_duty_ppm",
+        "sse_transfer_fee_ppm",
+    ] {
+        input["fee_schedule"][rate] = json!(0);
+    }
+    input["fee_schedule"]["minimum_commission_scaled"] = json!("0");
+    let bar = input["events"][0]["bars"][0].as_object_mut().unwrap();
+    bar.remove("up_limit_scaled");
+    bar.remove("down_limit_scaled");
+    let encoded = serde_json::to_vec(&input).unwrap();
+    let first = run_json(&encoded).unwrap();
+    let result: Value = serde_json::from_slice(&first).unwrap();
+    assert_eq!(result["fills"][0]["quantity"], "1");
+    assert_eq!(result["fills"][0]["commission_scaled"], "0");
+    assert_eq!(result["final_positions"][0]["sellable_quantity"], "1");
+    assert_eq!(result["nav"][0]["cash_scaled"], "199000000000");
+    assert_eq!(first, run_json(&encoded).unwrap());
+}
+
+#[test]
+fn price_limit_switch_never_accepts_missing_required_or_malformed_bands() {
+    let mut absent = request();
+    let bar = absent["events"][0]["bars"][0].as_object_mut().unwrap();
+    bar.remove("up_limit_scaled");
+    bar.remove("down_limit_scaled");
+    let error = run_json(&serde_json::to_vec(&absent).unwrap())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("price limits are required"), "{error}");
+
+    for (up, down) in [
+        (Some("1100000000"), None),
+        (None, Some("900000000")),
+        (Some("0"), Some("900000000")),
+        (Some("1100000000"), Some("0")),
+        (Some("800000000"), Some("900000000")),
+    ] {
+        let mut input = absent.clone();
+        input["enforce_price_limits"] = json!(false);
+        let bar = input["events"][0]["bars"][0].as_object_mut().unwrap();
+        if let Some(value) = up {
+            bar.insert("up_limit_scaled".into(), json!(value));
+        }
+        if let Some(value) = down {
+            bar.insert("down_limit_scaled".into(), json!(value));
+        }
+        let error = run_json(&serde_json::to_vec(&input).unwrap())
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("price limits must be a positive ordered pair"),
+            "{error}"
+        );
+    }
+}

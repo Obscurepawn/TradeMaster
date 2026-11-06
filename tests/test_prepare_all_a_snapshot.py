@@ -52,7 +52,13 @@ def test_full_a_panel_preserves_listing_auction_limits_and_action_gaps(tmp_path:
 
     assert permissions(0, "600001.SH") == ("no", "yes")
     assert permissions(1, "600001.SH") == ("yes", "no")
+    assert prices[(days[0].isoformat(), "600001.SH")]["buy_blocked_by_price_limit"]
+    assert prices[(days[1].isoformat(), "600001.SH")]["sell_blocked_by_price_limit"]
     assert permissions(1, "600002.SH") == permissions(1, "600003.SH") == ("unknown", "unknown")
     assert permissions(0, "688001.SH") == permissions(0, "920001.BJ") == ("unknown", "unknown")
     assert prices[(days[2].isoformat(), "600001.SH")]["corporate_action_gap"]
     assert permissions(2, "600001.SH") == ("unknown", "unknown")
+    for row in prices.values():
+        if row["buy_at_open"] == "unknown":
+            assert "buy_blocked_by_price_limit" not in row
+            assert "sell_blocked_by_price_limit" not in row

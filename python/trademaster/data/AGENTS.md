@@ -6,6 +6,21 @@ Parquet holds the source records. DuckDB indexes and queries them. Read
 credentials only when calling the provider adapter. Keep token values out of
 model representations, logs, catalog rows, manifests and tests.
 
+## IndexOne research observations
+
+`IndexOneDataSource` implements `ResearchDataSource` with a separate DuckDB
+request index and immutable Parquet responses. It does not publish into the
+TuShare canonical store or change its source policy. Read `INDEXONE_API_KEY`
+only on an uncached request. The key ID is not sent for authentication.
+
+Keep the HTTP client restricted to the documented read-only core operations.
+Validate inputs against the live operation catalog. The execute endpoint has no
+pagination; reject oversized or truncated responses rather than caching a prefix.
+On cache reads, verify request metadata, content hash, schema and row count.
+Fetched time records collection and must not become historical availability.
+Run `tests/test_indexone_client.py` and `tests/test_indexone_source.py` when changing
+this path. See [IndexOne usage](../../../docs/reference/indexone.md) for imports.
+
 ## Requests and availability
 
 Define each dataset's primary key, partitions, coverage keys and availability

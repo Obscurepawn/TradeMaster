@@ -90,12 +90,22 @@ struct Opening<'a> {
     reason: Option<&'a str>,
     documented: bool,
     suspended: bool,
+    blocked_by_price_limit: bool,
+    corporate_action_gap: bool,
 }
 impl DailyRow {
     fn opening(&self, side: Side) -> Opening<'_> {
-        let (permission, reason) = match side {
-            Side::Buy => (&self.buy_at_open, self.buy_reason.as_deref()),
-            Side::Sell => (&self.sell_at_open, self.sell_reason.as_deref()),
+        let (permission, reason, blocked_by_price_limit) = match side {
+            Side::Buy => (
+                &self.buy_at_open,
+                self.buy_reason.as_deref(),
+                self.buy_blocked_by_price_limit,
+            ),
+            Side::Sell => (
+                &self.sell_at_open,
+                self.sell_reason.as_deref(),
+                self.sell_blocked_by_price_limit,
+            ),
         };
         Opening {
             price: self.open,
@@ -103,6 +113,8 @@ impl DailyRow {
             reason,
             documented: self.evidence.as_ref().is_some_and(|s| !s.is_empty()),
             suspended: self.suspended,
+            blocked_by_price_limit,
+            corporate_action_gap: self.corporate_action_gap,
         }
     }
 }
@@ -402,6 +414,7 @@ impl<'a> SnapshotSession<'a> {
                 k,
                 plan,
                 &mut self.out,
+                self.policy.enforce_price_limits,
                 self.detail,
                 self.feedback,
             )?;

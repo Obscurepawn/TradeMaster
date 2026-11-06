@@ -32,6 +32,7 @@ Issues = "https://github.com/Obscurepawn/TradeMaster/issues"
 
 [project.scripts]
 tm-replay = "trademaster.replay:main"
+tm-indexone = "trademaster.data.indexone:main"
 tm-factor = "trademaster.factors.__main__:main"
 tm-research-full-a = "trademaster.research.__main__:main"
 

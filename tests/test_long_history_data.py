@@ -31,8 +31,12 @@ def test_only_confirmed_full_day_suspensions_can_be_carried() -> None:
     assert [(p.open, p.close, p.suspended) for p in prices][1] == (None, None, True)
     assert prices[1].adjusted_close is None
     assert prices[1].buy_reason == prices[1].sell_reason == "suspended"
+    assert not prices[1].buy_blocked_by_price_limit
+    assert not prices[1].sell_blocked_by_price_limit
     assert prices[2].buy_at_open == "yes"
     assert prices[2].sell_reason == "lower_limit"
+    assert prices[2].sell_blocked_by_price_limit
+    assert not prices[2].buy_blocked_by_price_limit
     with pytest.raises(ValueError, match="missing.*bar"):
         history._normalize({first: quote, halt: no_bar})
     for key, value in (("adj_factor", 2.554), ("pre_close", 5.5)):

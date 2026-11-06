@@ -57,6 +57,8 @@ pub struct RunnerRequest {
     pub instruments: Vec<InstrumentInput>,
     pub fee_schedule: FeeScheduleInput,
     pub slippage_ppm: u32,
+    #[serde(default = "default_true", skip_serializing_if = "is_true")]
+    pub enforce_price_limits: bool,
     pub session_opens: Vec<String>,
     pub events: Vec<EventInput>,
     pub signals: Vec<SignalInput>,
@@ -102,8 +104,10 @@ pub struct BarInput {
     pub low_scaled: String,
     pub close_scaled: String,
     pub volume_units: String,
-    pub up_limit_scaled: String,
-    pub down_limit_scaled: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub up_limit_scaled: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub down_limit_scaled: Option<String>,
     pub trading_status: String,
     pub status_evidence_id: String,
 }
@@ -119,6 +123,14 @@ pub struct SignalInput {
     pub value_scaled: String,
     pub reason: String,
     pub snapshot_id: String,
+}
+
+const fn default_true() -> bool {
+    true
+}
+
+const fn is_true(value: &bool) -> bool {
+    *value
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -430,16 +442,38 @@ pub fn run_json(input: &[u8]) -> Result<Vec<u8>, RunnerError> {
                 let high = parse_integer(&bar.high_scaled, "bar high")?;
                 let low = parse_integer(&bar.low_scaled, "bar low")?;
                 let close = parse_integer(&bar.close_scaled, "bar close")?;
-                let up_limit = parse_integer(&bar.up_limit_scaled, "up limit")?;
-                let down_limit = parse_integer(&bar.down_limit_scaled, "down limit")?;
+                let (up_limit, down_limit) = match (&bar.up_limit_scaled, &bar.down_limit_scaled) {
+                    (Some(up), Some(down)) => {
+                        let up = parse_integer(up, "up limit")?;
+                        let down = parse_integer(down, "down limit")?;
+                        if down <= 0 || up < down {
+                            return Err(invalid("price limits must be a positive ordered pair"));
+                        }
+                        (
+                            Some(
+                                Fixed8::from_scaled(up)
+                                    .map_err(|error| invalid(error.to_string()))?,
+                            ),
+                            Some(
+                                Fixed8::from_scaled(down)
+                                    .map_err(|error| invalid(error.to_string()))?,
+                            ),
+                        )
+                    }
+                    (None, None) if !request.enforce_price_limits => (None, None),
+                    (None, None) => {
+                        return Err(invalid(
+                            "price limits are required when enforcement is enabled",
+                        ));
+                    }
+                    _ => return Err(invalid("price limits must be a positive ordered pair")),
+                };
                 if low <= 0
                     || high < low
                     || open < low
                     || open > high
                     || close < low
                     || close > high
-                    || down_limit <= 0
-                    || up_limit < down_limit
                 {
                     return Err(invalid("bar price geometry is invalid"));
                 }
@@ -453,10 +487,8 @@ pub fn run_json(input: &[u8]) -> Result<Vec<u8>, RunnerError> {
                         .map_err(|error| invalid(error.to_string()))?,
                     volume: Quantity::positive(parse_integer(&bar.volume_units, "volume")?)
                         .map_err(|error| invalid(error.to_string()))?,
-                    up_limit: Fixed8::from_scaled(up_limit)
-                        .map_err(|error| invalid(error.to_string()))?,
-                    down_limit: Fixed8::from_scaled(down_limit)
-                        .map_err(|error| invalid(error.to_string()))?,
+                    up_limit,
+                    down_limit,
                     trading_status: status(&bar.trading_status)?,
                     status_evidence_id: bar.status_evidence_id.clone(),
                 })
@@ -515,7 +547,8 @@ pub fn run_json(input: &[u8]) -> Result<Vec<u8>, RunnerError> {
     let strategy = ScheduledSignalStrategy::try_new_with_instruments(signals, instruments.clone())
         .map_err(|error| invalid(error.to_string()))?;
     let validator = CnAshareOrderValidator::try_new(fees.clone(), request.slippage_ppm)
-        .map_err(|error| invalid(error.to_string()))?;
+        .map_err(|error| invalid(error.to_string()))?
+        .with_price_limits(request.enforce_price_limits);
     let execution =
         DailyBarExecutionModel::try_new(instruments.clone(), fees, request.slippage_ppm)
             .map_err(|error| invalid(error.to_string()))?;

@@ -36,6 +36,87 @@ fn run(data: &Value, req: &Value) -> Value {
     serde_json::to_value(run_snapshot(&data, &run).unwrap()).unwrap()
 }
 
+fn limit_scenario(side: &str) -> (Value, Value, usize) {
+    let (mut data, mut req) = scenario();
+    req["policy"]["max_attempts"] = json!(1);
+    let row = if side == "buy" {
+        req["initial_lots"] = json!([]);
+        5 // B at the first eligible open.
+    } else {
+        req["targets"][0]["weights"] = json!({});
+        1 // A at the first eligible open.
+    };
+    data["rows"][row][format!("{side}_at_open")] = json!("no");
+    data["rows"][row][format!("{side}_reason")] = json!("documented_exchange_band");
+    data["rows"][row][format!("{side}_blocked_by_price_limit")] = json!(true);
+    (data, req, row)
+}
+
+#[test]
+fn price_limit_enforcement_can_be_disabled_for_each_documented_side() {
+    for side in ["buy", "sell"] {
+        let (data, mut req, _) = limit_scenario(side);
+        let enforced = run(&data, &req);
+        assert_eq!(enforced["fill_count"], 0);
+        assert_eq!(enforced["orders"][0]["reason"], "documented_exchange_band");
+
+        req["policy"]["enforce_price_limits"] = json!(false);
+        let relaxed = run(&data, &req);
+        assert_eq!(relaxed["fill_count"], 1);
+        assert_eq!(relaxed["fills"][0]["side"], side);
+        assert_eq!(relaxed["orders"][0]["status"], "filled");
+    }
+}
+
+#[test]
+fn disabling_price_limits_retains_other_opening_restrictions() {
+    let (data, mut req, row) = limit_scenario("buy");
+    req["policy"]["enforce_price_limits"] = json!(false);
+    for (field, value, expected) in [
+        ("suspended", json!(true), "suspended"),
+        ("evidence", Value::Null, "missing_open_evidence"),
+        ("open", Value::Null, "missing_open"),
+        ("open", json!(21 * U), "above_buy_cap"),
+        ("corporate_action_gap", json!(true), "corporate_action_gap"),
+        (
+            "buy_blocked_by_price_limit",
+            json!(false),
+            "documented_exchange_band",
+        ),
+    ] {
+        let mut restricted = data.clone();
+        restricted["rows"][row][field] = value;
+        let result = run(&restricted, &req);
+        assert_eq!(result["fill_count"], 0, "{field}");
+        let reason = if result["status"] == "insufficient_data" {
+            &result["first_issue"]["reason"]
+        } else {
+            &result["orders"][0]["reason"]
+        };
+        assert_eq!(reason, expected, "{field}");
+    }
+    let mut unknown = data.clone();
+    unknown["rows"][row]["buy_at_open"] = json!("unknown");
+    unknown["rows"][row]["buy_blocked_by_price_limit"] = json!(false);
+    let result = run(&unknown, &req);
+    assert_eq!(result["status"], "insufficient_data");
+    assert_eq!(result["fill_count"], 0);
+}
+
+#[test]
+fn price_limit_markers_require_a_known_blocked_permission() {
+    for side in ["buy", "sell"] {
+        for permission in ["yes", "unknown"] {
+            let (mut data, req, row) = limit_scenario(side);
+            data["rows"][row][format!("{side}_at_open")] = json!(permission);
+            let data: SnapshotData = serde_json::from_value(data).unwrap();
+            let req: SnapshotRun = serde_json::from_value(req).unwrap();
+            let error = run_snapshot(&data, &req).unwrap_err();
+            assert!(error.to_string().contains("price-limit marker"));
+        }
+    }
+}
+
 #[test]
 fn four_session_rotation_reserves_cash_and_charges_only_fills() {
     let (mut data, mut req) = scenario();

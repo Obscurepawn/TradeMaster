@@ -210,6 +210,8 @@ def _normalize(rows: Mapping[date, Mapping[str, Any]]) -> tuple[list[DailyPrice]
                 "tushare:stk_limit+suspend_d",
                 suspended=suspended,
                 adjusted_close=float(close * factor) if close is not None else None,
+                buy_blocked_by_price_limit=not suspended and opening == upper,
+                sell_blocked_by_price_limit=not suspended and opening == lower,
             )
         )
         normalized.append(

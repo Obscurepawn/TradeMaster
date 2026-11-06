@@ -146,6 +146,74 @@ def _request() -> RunnerRequest:
     )
 
 
+def test_event_price_limit_policy_preserves_default_serialization() -> None:
+    original = _request()
+    assert original.enforce_price_limits is True
+    payload = original.model_dump(mode="json")
+    assert "enforce_price_limits" not in payload
+    payload["enforce_price_limits"] = False
+    configured = RunnerRequest.model_validate_json(json.dumps(payload))
+    assert configured.model_dump(mode="json")["enforce_price_limits"] is False
+
+
+def test_event_price_limits_are_optional_only_with_enforcement_disabled() -> None:
+    payload = _request().model_dump(mode="json")
+    for event in payload["events"]:
+        for bar in event["bars"]:
+            bar.pop("up_limit_scaled")
+            bar.pop("down_limit_scaled")
+    with pytest.raises(ValueError, match="price limits are required"):
+        RunnerRequest.model_validate_json(json.dumps(payload))
+    payload["enforce_price_limits"] = False
+    request = RunnerRequest.model_validate_json(json.dumps(payload))
+    assert request.events[0].bars[0].up_limit_scaled is None
+    assert "up_limit_scaled" not in request.model_dump(mode="json")["events"][0]["bars"][0]
+    payload["events"][0]["bars"][0]["up_limit_scaled"] = "1100000000"
+    with pytest.raises(ValueError, match="price limits must be a positive ordered pair"):
+        RunnerRequest.model_validate_json(json.dumps(payload))
+
+
+def test_event_fee_schedule_accepts_zero_commission() -> None:
+    payload = _request().fee_schedule.model_dump(mode="json")
+    payload["commission_ppm"] = 0
+    payload["minimum_commission_scaled"] = "0"
+    assert RunnerFeeSchedule.model_validate_json(json.dumps(payload)).commission_ppm == 0
+
+
+def test_configured_event_run_persists_limit_switch_and_replays(tmp_path: Path) -> None:
+    payload = _request().model_dump(mode="json")
+    payload["enforce_price_limits"] = False
+    payload["instruments"][0].update(venue="nasdaq", currency="USD", buy_lot_size=1, settlement="t0")
+    payload["signals"][0]["value_scaled"] = str(UNIT)
+    payload["slippage_ppm"] = 0
+    payload["fee_schedule"].update(
+        commission_ppm=0,
+        minimum_commission_scaled="0",
+        sell_stamp_duty_ppm=0,
+        sse_transfer_fee_ppm=0,
+    )
+    for event in payload["events"]:
+        for bar in event["bars"]:
+            bar.pop("up_limit_scaled")
+            bar.pop("down_limit_scaled")
+    configured = RunnerRequest.model_validate_json(json.dumps(payload).replace("600000.SH", "AAPL.US"))
+    bundle = E2ERunnerClient().execute(
+        configured,
+        output_dir=tmp_path / "configured",
+        benchmarks=(),
+        classifications={"AAPL.US": ("technology", "large")},
+        snapshot_manifests=(BUY_SNAPSHOT, SELL_SNAPSHOT, MARKET_SNAPSHOT),
+    )
+    saved = json.loads(bundle.request_path.read_text())
+    assert saved["enforce_price_limits"] is False
+    assert "up_limit_scaled" not in saved["events"][0]["bars"][0]
+    result = json.loads(bundle.result_path.read_text())
+    assert [fill["quantity"] for fill in result["fills"]] == ["1", "1"]
+    assert result["nav"][-1]["cash_scaled"] == str(2_001 * UNIT)
+    verified = verify_e2e_bundle(bundle.manifest_path)
+    assert verified.result_sha256 == bundle.result_sha256
+
+
 def test_target_weight_allocator_emits_lot_sized_quantity_signals() -> None:
     table = pa.Table.from_pylist(
         [

@@ -18,6 +18,14 @@ The [four-session blocked-sale example](../../specs/examples/blocked_rotation.py
 
 Run `uv run python specs/examples/profile_replay.py` to time the installed Rust extension on 16 instruments over 64, 128, 256 and 512 sessions. The script prints the median replay time in seconds for each history length. [Profiling script](../../specs/examples/profile_replay.py)
 
+## IndexOne acquisition
+
+`uv run tm-indexone --data-root data/indexone --request path/to/query.json`
+downloads an allowed core dataset or reopens the matching cache entry. Add
+`--offline` to require cached data or `--refresh` to collect a new observation.
+The command prints the row count, Parquet path and request/content hashes.
+See the [request-file example and credentials](indexone.md#download-a-small-price-sample).
+
 ## Factor definitions and values
 
 `uv run tm-factor [--root PATH] COMMAND` operates on the managed factor store. The default root is `.trademaster/factors`. An identity such as `fundamental.roe@1` selects a definition. A materialization ID selects saved values for a particular scope and input lineage. [Parser and dispatch](../../python/trademaster/factors/__main__.py) · [Storage and examples](../factor-management.md)

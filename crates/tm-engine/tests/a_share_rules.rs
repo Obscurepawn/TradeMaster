@@ -80,8 +80,8 @@ fn view_with_bar_time(
         low: Fixed8::from_scaled(open_scaled).unwrap(),
         close: Fixed8::from_scaled(open_scaled).unwrap(),
         volume: Quantity::positive(10_000).unwrap(),
-        up_limit: Fixed8::from_scaled(11 * UNIT).unwrap(),
-        down_limit: Fixed8::from_scaled(9 * UNIT).unwrap(),
+        up_limit: Some(Fixed8::from_scaled(11 * UNIT).unwrap()),
+        down_limit: Some(Fixed8::from_scaled(9 * UNIT).unwrap()),
         trading_status: status,
         status_evidence_id: "status-object".to_owned(),
     };
@@ -262,8 +262,8 @@ fn validator_binds_exact_event_bar_instrument_and_slippage_cash() {
             low: Fixed8::from_scaled(10 * UNIT).unwrap(),
             close: Fixed8::from_scaled(10 * UNIT).unwrap(),
             volume: Quantity::positive(10_000).unwrap(),
-            up_limit: Fixed8::from_scaled(11 * UNIT).unwrap(),
-            down_limit: Fixed8::from_scaled(9 * UNIT).unwrap(),
+            up_limit: Some(Fixed8::from_scaled(11 * UNIT).unwrap()),
+            down_limit: Some(Fixed8::from_scaled(9 * UNIT).unwrap()),
             trading_status: TradingStatus::Tradable,
             status_evidence_id: "other".to_owned(),
         },
@@ -275,8 +275,8 @@ fn validator_binds_exact_event_bar_instrument_and_slippage_cash() {
             low: Fixed8::from_scaled(10 * UNIT).unwrap(),
             close: Fixed8::from_scaled(10 * UNIT).unwrap(),
             volume: Quantity::positive(10_000).unwrap(),
-            up_limit: Fixed8::from_scaled(11 * UNIT).unwrap(),
-            down_limit: Fixed8::from_scaled(9 * UNIT).unwrap(),
+            up_limit: Some(Fixed8::from_scaled(11 * UNIT).unwrap()),
+            down_limit: Some(Fixed8::from_scaled(9 * UNIT).unwrap()),
             trading_status: TradingStatus::Tradable,
             status_evidence_id: "target".to_owned(),
         },
@@ -317,4 +317,152 @@ fn validator_binds_exact_event_bar_instrument_and_slippage_cash() {
             .code(),
         RejectionCode::InsufficientCash
     );
+}
+
+#[test]
+fn disabling_price_limits_keeps_lot_suspension_cash_and_sellable_checks() {
+    let now = OffsetDateTime::UNIX_EPOCH + Duration::DAY;
+    let validator = CnAshareOrderValidator::new(fee_schedule()).with_price_limits(false);
+    for (side, price, quantity, sellable) in [
+        (Side::Buy, 11 * UNIT, 0, 0),
+        (Side::Sell, 9 * UNIT, 100, 100),
+    ] {
+        assert!(
+            validator
+                .validate(
+                    &submitted(side, 100, now),
+                    &view(
+                        now,
+                        price,
+                        TradingStatus::Tradable,
+                        2_000 * UNIT,
+                        quantity,
+                        sellable
+                    ),
+                )
+                .is_ok()
+        );
+    }
+    for (side, order_quantity, status, cash, held, sellable, expected) in [
+        (
+            Side::Buy,
+            150,
+            TradingStatus::Tradable,
+            2_000 * UNIT,
+            0,
+            0,
+            RejectionCode::InvalidQuantity,
+        ),
+        (
+            Side::Buy,
+            100,
+            TradingStatus::Suspended,
+            2_000 * UNIT,
+            0,
+            0,
+            RejectionCode::Suspended,
+        ),
+        (
+            Side::Buy,
+            100,
+            TradingStatus::Tradable,
+            0,
+            0,
+            0,
+            RejectionCode::InsufficientCash,
+        ),
+        (
+            Side::Sell,
+            100,
+            TradingStatus::Tradable,
+            0,
+            100,
+            0,
+            RejectionCode::InsufficientSellable,
+        ),
+    ] {
+        assert_eq!(
+            validator
+                .validate(
+                    &submitted(side, order_quantity, now),
+                    &view(now, 11 * UNIT, status, cash, held, sellable)
+                )
+                .unwrap_err()
+                .code(),
+            expected
+        );
+    }
+    assert_eq!(
+        validator
+            .validate(
+                &submitted(Side::Buy, 100, now + Duration::DAY),
+                &view(now, 11 * UNIT, TradingStatus::Tradable, 2_000 * UNIT, 0, 0),
+            )
+            .unwrap_err()
+            .code(),
+        RejectionCode::InvalidTime
+    );
+    let stale = view_with_bar_time(
+        now,
+        now - Duration::DAY,
+        11 * UNIT,
+        TradingStatus::Tradable,
+        2_000 * UNIT,
+        0,
+        0,
+    );
+    assert_eq!(
+        validator
+            .validate(&submitted(Side::Buy, 100, now), &stale)
+            .unwrap_err()
+            .code(),
+        RejectionCode::MissingMarketData
+    );
+}
+
+#[test]
+fn missing_price_limits_require_an_explicit_disabled_policy() {
+    let now = OffsetDateTime::UNIX_EPOCH + Duration::DAY;
+    let original = view(now, 10 * UNIT, TradingStatus::Tradable, 2_000 * UNIT, 0, 0);
+    let mut bar = original.market().bars()[0].clone();
+    bar.up_limit = None;
+    bar.down_limit = None;
+    let missing = ValidationView::try_new(
+        MarketEventKind::SessionOpen,
+        instrument(),
+        MarketSnapshot::try_new(now, "c".repeat(64), vec![bar]).unwrap(),
+        original.portfolio().clone(),
+    )
+    .unwrap();
+    let order = submitted(Side::Buy, 100, now);
+    let validator = CnAshareOrderValidator::new(fee_schedule());
+    let rejection = validator.validate(&order, &missing).unwrap_err();
+    assert_eq!(rejection.code(), RejectionCode::MissingMarketData);
+    assert_eq!(rejection.message(), "missing_price_limits");
+    assert!(
+        validator
+            .with_price_limits(false)
+            .validate(&order, &missing)
+            .is_ok()
+    );
+}
+
+#[test]
+fn zero_commission_rate_still_observes_the_configured_minimum() {
+    let now = OffsetDateTime::UNIX_EPOCH + Duration::DAY;
+    let order = tm_core::AcceptedOrder::try_new(submitted(Side::Buy, 100, now), now).unwrap();
+    for minimum in [0, 5 * UNIT] {
+        let fees = CnFeeSchedule::try_new(0, minimum, 0, 0, UNIT / 100, "zero-rate").unwrap();
+        let costs = fees
+            .quote(
+                &instrument(),
+                &order,
+                Quantity::positive(100).unwrap(),
+                Fixed8::from_scaled(10 * UNIT).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(costs.commission().scaled(), minimum);
+        assert_eq!(costs.tax().scaled(), 0);
+        assert_eq!(costs.transfer_fee().scaled(), 0);
+    }
 }

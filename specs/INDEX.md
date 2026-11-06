@@ -6,6 +6,8 @@
 
 ## Completed
 
+- [IndexOne data source](20261106-indexone-data-source.md). Read-only core data queries, immutable Parquet evidence, offline reuse and acquisition examples.
+- [Configurable trading rules](20261106-configurable-trading-rules.md). Optional price-limit enforcement, existing instrument rules and zero-commission event runs preserve A-share defaults and saved replay.
 - [Broad ETF execution benchmark](20261105-broad-etf-benchmark.md). Index signals, ETF fills and cash distributions over fifteen years.
 - [Fifteen-year backtest benchmark](20261105-long-history-benchmark.md). A daily moving-average strategy and buy-and-hold control across 3,644 Shenzhen sessions.
 - [Python and Rust backtest interface](20261105-python-rust-backtest-interface.md). Account-aware Python strategies, a native Rust engine and saved-request replay share one installed package.

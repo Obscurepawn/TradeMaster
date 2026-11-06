@@ -133,6 +133,8 @@ class InitialAccount:
 
 @dataclass(frozen=True)
 class Policy:
+    """Run costs and opening checks, with A-share defaults."""
+
     commission_ppm: int = 300
     minimum_commission: Amount = Decimal(5)
     sell_stamp_duty_ppm: int = 500
@@ -140,6 +142,11 @@ class Policy:
     slippage_ppm: int = 0
     buy_cap_ppm: int = 20_000
     max_attempts: int = 3
+    enforce_price_limits: bool = True
+
+    def __post_init__(self) -> None:
+        if type(self.enforce_price_limits) is not bool:
+            raise ValueError("enforce_price_limits must be a boolean")
 
 
 _DEFAULT_POLICY = Policy()
@@ -147,7 +154,7 @@ _DEFAULT_POLICY = Policy()
 
 @dataclass(frozen=True)
 class BacktestResult:
-    """Raw Rust currency/weight fields use fixed-8 integers. Equity and summary use CNY."""
+    """Raw Rust fields use fixed-8 integers; equity and summary use the account currency."""
 
     snapshot_id: str
     request: dict[str, Any]
@@ -385,6 +392,8 @@ def backtest(
             }
         )
     policy_fields = asdict(policy)
+    if policy.enforce_price_limits:
+        del policy_fields["enforce_price_limits"]
     policy_fields["minimum_commission"] = scaled(policy.minimum_commission, "minimum commission")
     run = {
         "initial_cash": scaled(account.cash, "initial cash"),
