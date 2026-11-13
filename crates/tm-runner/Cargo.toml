@@ -1,5 +1,6 @@
 [package]
 name = "tm-runner"
+description = "Saved-request decoding and deterministic replay runner for TradeMaster snapshot and event backtests"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

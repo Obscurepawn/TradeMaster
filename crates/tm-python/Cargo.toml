@@ -1,5 +1,7 @@
 [package]
 name = "tm-python"
+description = "PyO3 native extension binding the TradeMaster Rust execution engine into Python"
+publish = false
 version.workspace = true
 edition.workspace = true
 license.workspace = true

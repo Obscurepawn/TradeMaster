@@ -1,114 +1,64 @@
-# M7 managed factors and fundamental strategy migration
+# M7: Managed Factor Registry, Materialization Store, and Strategy Refactor
 
-Status: complete
-Owner: Codex
-Updated: 2026-08-23
+**Status:** Completed | **Date:** 2026-08-23 | **Scope:** Managed factor DAG, Parquet/DuckDB materializations, factor evaluation, `tm-factor` CLI, and fundamental strategy migration (`trademaster.factors`, `trademaster.data`, `trademaster.strategies.industry_fundamental`) | **Updates:** [M2: Factor Computation and Signal Generation](20260811-m2-factor-signal-layer.md) | **Updated-by:** [M9: Twenty-Year All-A-Share Factor Research Pipeline and Quality Audit](20260823-m9-full-a-20y-factor-evaluation-quality.md)
 
-> **M9 correction, 2026-08-23.** `_active_industry` ignored the signal date and `out_date`. It assigned an industry that the stock joined *after* the signal in 55 of 560 Top1 selections and 20 of 200 Top10 selections, as shown by `in_date`. These future classifications invalidate a point-in-time (PIT) interpretation of the reported returns. The reports also used continuous QFQ prices to approximate corporate actions. Retain them for diagnosis only. The default policy now checks historical membership on the signal date and stops on a gap. Static classifications have a separate experimental policy.
+> **Post-M9 Point-in-Time Audit Notice (2026-08-23):** During the M9 audit, `_active_industry` was found to ignore the signal date and `out_date`, assigning post-signal industry classifications (`in_date > signal_date`) in 55 of 560 Top-1 selections and 20 of 200 Top-10-industries selections. Combined with continuous backward-adjusted (QFQ) price execution approximations, those ten-year return figures are retained strictly as engineering replay diagnostics rather than point-in-time (PIT) alpha estimates. The default policy now enforces historical industry membership on the signal date and halts on missing intervals.
 
-## Purpose and scope
+## Motivation and Defects Addressed
 
-The all-industry Top1 and ten-industry Top1 runs exposed problems with scoring, execution, identity and reuse. M7 addressed twelve findings, built a factor registry with persistent values and PIT provenance, moved the nine fundamental indicators into it and replayed both strategies on the existing ten-year Tushare cache. The strategy retains industry selection, TopN and rebalance rules.
+Auditing the ten-year [Top-1](20260812-industry-fundamental-top1-experiment.md) and [Top-10-industries](20260812-industry-fundamental-top10-industries.md) runs surfaced twelve architectural and correctness issues (`F-01` through `F-12`) across cross-sectional scoring, execution fallbacks, identity hashing, and factor reuse. Milestone M7 introduced a persistent managed factor subsystem with Parquet/DuckDB provenance, migrated the nine fundamental indicators and two composites into managed factor definitions, and replayed both strategies over the ten-year Tushare cache via v3 run bundles.
 
-| ID | Finding and consequence | Resolution |
+| ID | Defect and Consequence | Implemented Resolution |
 |---|---|---|
-| F-01 | The public scorer standardized different `signal_time` values together, leaking information across dates. | Reject mixed times in the single-cross-section API. Group managed factor calculations by event time. |
-| F-02 | Missing execution-day limits or status produced permissive synthetic limits. Orders could fill with incomplete market rules. | Stop formal execution when required market status is missing. |
-| F-03 | All variants wrote `fundamental_selections` without strategy or factor definition hashes. A single schema version described different records. | Define the derived schema and record strategy, factor and input identities. |
-| F-04 | `strategy_id/run_id` encoded only TopN. Weights, preprocessing and universe could change without changing identity. | Normalize the full configuration and derive definition and run hashes. |
-| F-05 | Nine scores, directions, preprocessing steps and weights lived in the strategy. | Register nine atomic factors and two composites, one within industries and one across the market. |
-| F-06 | The last selected size bucket was applied to the whole history. | Use each classification only during its effective period in exposure reports. |
-| F-07 | The strategy duplicated M1 Tushare, Parquet, DuckDB, cache and snapshot responsibilities, with separate rules for evidence. | Define one research data interface that returns evidence. Retain the ten-year cache through a compatibility adapter. |
-| F-08 | The selection snapshot identified only winners. Replaying it could not verify the full universe, nine inputs or definitions. | Identify input snapshots, definitions and output hashes on materializations. |
-| F-09 | Public configuration allowed different dates, universes and benchmarks, but reports still said “CSI 300” and “ten years.” | Generate summaries, titles and text from the recorded run configuration. |
-| F-10 | `fetched_at` defaulted to the backtest end plus one day. | Record actual wall-clock ingestion, run as-of time and row availability (`known_at`) separately. |
-| F-11 | A request for N industries silently returned fewer if fewer qualified. | Make exact vs. minimum counts an explicit option. Reject a shortfall by default. |
-| F-12 | Sorting a target-weight portfolio by `signal_id` let display IDs change purchase priority and whole-lot holdings in small accounts. | Sell before buying. Within each side use instrument ID, with signal ID only as a final tie-break. |
+| `F-01` | Public cross-sectional scorer standardized mixed `signal_time` rows together, leaking information across dates. | Rejected mixed timestamps in single-cross-section APIs and grouped managed factor calculations strictly by `event_time`. |
+| `F-02` | Missing execution-day price limits or trading status fell back to permissive synthetic limits. | Enforced fail-closed execution whenever required market status or price-limit evidence is absent. |
+| `F-03` | `fundamental_selections` omitted strategy and factor definition digests across incompatible variants. | Defined a versioned selection schema binding strategy, factor definition, and input snapshot hashes. |
+| `F-04` | `strategy_id` and `run_id` encoded only `top_per_industry`, allowing weights or universes to change under the same ID. | Normalized the complete strategy configuration to derive canonical definition and run hashes. |
+| `F-05` | Nine indicator formulas, signs, winsorization bounds, and weights were hard-coded inside strategy code. | Registered nine atomic `FactorDefinition` records plus two managed composites (within-industry and market-wide). |
+| `F-06` | Exposure diagnostics retroactively applied each stock's final market-cap bucket across its entire history. | Applied size and industry classifications strictly within their effective observation intervals. |
+| `F-07` | Strategy cache logic duplicated M1 Tushare/Parquet/DuckDB responsibilities under separate evidence rules. | Introduced provider-neutral `ResearchDataSource` returning immutable Parquet evidence while retaining existing ten-year cache files via a compatibility adapter. |
+| `F-08` | Selection snapshots recorded only winning rows, preventing replay audits of the candidate universe or inputs. | Bound full-universe input snapshots, factor definition hashes, and output Parquet SHA-256 digests into `FactorMaterialization` and v3 run bundles. |
+| `F-09` | Report summaries hard-coded "CSI 300" and "ten years" even when configured for other universes or windows. | Generated report titles, narrative summaries, and metadata dynamically from the normalized run configuration. |
+| `F-10` | `fetched_at` defaulted to `backtest_end + 1 day` rather than recording actual ingestion time. | Recorded wall-clock ingestion time, run `as_of` cutoff, and row availability (`known_at`) as distinct fields. |
+| `F-11` | Requesting `N` top industries silently returned fewer industries when fewer qualified. | Added an explicit exact-count vs. minimum-count option, rejecting industry shortfalls by default. |
+| `F-12` | Sorting target-weight orders by `signal_id` allowed display IDs to alter board-lot purchase priority in small accounts. | Enforced sells before buys and deterministic sorting by `instrument_id` within each side (`signal_id` used only as a final tie-breaker). |
 
-M7 fixed F-01 through F-06 and F-08 through F-12. For F-07 it introduced the interface without deleting or redownloading the cache. The work excluded model training, distributed scheduling and real-time factor service. The original M7 scope retained disclosure of missing historical SW2021 revisions and the adjusted-price execution approximation. Moving exit retries into Rust was deferred to a separate milestone. The existing idempotent zero-target exit policy stayed in effect.
+Model training, distributed task schedulers, and real-time streaming factor servers remained outside M7 scope, and moving multi-day exit retries into the Rust snapshot engine was deferred to [Code Architecture Refactoring](20261104-code-architecture-refactor.md).
 
-## Public interfaces
+## Public Interfaces and Storage Architecture
 
-- `FactorDefinition` records stable ID/version, family, description, dependencies, parameters, lookback, scope, implementation SHA and definition SHA.
-- `ManagedFactorRegistry` supports lookup by identity or definition SHA. It rejects duplicate identities, unknown dependencies and cycles.
-- `FactorManager.materialize()/load()/query_values()` accept Arrow data tied to a snapshot. An identical definition, input, universe and event range reuses Parquet. Otherwise compute, validate, write atomically and register the result in DuckDB.
-- `FactorMaterialization` records definition SHA, input snapshot ID and object hashes, output SHA, schema, row count, range, universe and creation time (`created_at`).
-- `FactorEvaluator` covers observation coverage, Pearson IC, RankIC, IC mean/standard deviation/ICIR, returns by quantile, long–short spread, turnover and factor correlations.
-- `FactorCatalog` lists definitions, materializations and evaluations. Parquet holds factor values. DuckDB indexes and queries them.
-- The proposed CLI actions were `factor list`, `factor describe`, `factor materialize` and `factor evaluate`. The released entry point was tested as `tm-factor list`.
+- **`FactorDefinition` & `ManagedFactorRegistry`:** Each definition binds a stable `(factor_id, version)`, family, description, upstream factor/dataset dependencies, parameters, lookback window, cross-sectional scope, implementation code SHA-256, and canonical definition SHA-256. `ManagedFactorRegistry` supports lookup by ID or definition digest and rejects duplicate identities, unknown dependencies, and DAG cycles.
+- **`FactorManager` & `FactorMaterialization`:** `materialize()`, `load()`, and `query_values()` consume Arrow tables tied to an immutable **data snapshot** (via `ResearchDataSource`). Identical `(definition_sha256, input_snapshot_id, universe, event_range)` requests reuse verified Parquet files; cache misses compute in dependency order, validate schemas, write Parquet atomically, and index `FactorMaterialization` metadata (definition SHA, input snapshot and object hashes, output SHA, row count, universe, and `created_at`) in `FactorCatalog` (DuckDB).
+- **`FactorEvaluator` & CLI (`tm-factor`):** Computes observation coverage, Pearson IC, Spearman RankIC, IC mean/std/ICIR, quantile portfolio returns, top-minus-bottom spread, quantile turnover, and pairwise factor correlations. Exposed via the `tm-factor` CLI (`list`, `describe`, `materialize`, `evaluate`).
 
-## Milestones and acceptance
+## Milestones and Replay Results
 
-| Milestone | Owner | Status | Evidence |
-|---|---|---|---|
-| M7.1 Reproduce and correct public behavior | Codex | complete | Focused regressions and disposition of F-01 through F-12 |
-| M7.2 Definitions, registry, dependencies and identity | Codex | complete | Definition, parameter, code-hash and graph tests |
-| M7.3 Parquet/DuckDB storage, cache and PIT provenance | Codex | complete | Real temporary databases/files and bundle v3 |
-| M7.4 Evaluation and CLI | Codex | complete | Hand calculations and CLI smoke tests |
-| M7.5 Move nine indicators into managed factors | Codex | complete | Exact matches for 560 Top1 and 200 Top10 selection rows |
-| M7.6 Ten-year runs, replay, report and scoped review | Codex | complete | Zero provider calls, equivalent economic outputs and passing review |
+| Subtask | Status | Verification Summary |
+|---|---|---|
+| M7.1: Defect reproduction and fixes (`F-01`–`F-12`) | Completed | Focused regression suites covering every defect class |
+| M7.2: Managed `FactorDefinition`, DAG validation, and code/config hashing | Completed | Parameter, source-hash, and cycle-rejection unit suites |
+| M7.3: Parquet/DuckDB materialization store and v3 bundle provenance | Completed | Temporary DuckDB/Parquet corruption and provenance tests |
+| M7.4: `FactorEvaluator` diagnostics and `tm-factor` CLI | Completed | Hand-calculated IC/quantile fixtures and wheel CLI smoke tests |
+| M7.5: Migration of nine fundamental indicators and two composites | Completed | Exact reproduction of all 560 Top-1 and 200 Top-10 selection rows |
+| M7.6: Ten-year Rust replay, v3 reports, and independent review | Completed | Zero provider calls, 540 byte-identical bundle files per variant |
 
-- [x] Correct each reported defect or document why part of it remains. Use canonical content hashes for definitions and materializations. A change in code or parameters changes the definition.
-- [x] Store factor values in Parquet. Reject damaged files or inconsistent provenance. Identify the input snapshot, definition, universe, event range and output hash for each materialization.
-- [x] Check IC, RankIC, quantile returns, turnover and related metrics against hand calculations. Obtain both atomic and composite scores through the factor API.
-- [x] Compare all 20 selection dates and economic results for each strategy against its baseline. Locate and explain differences.
-- [x] Run ten real years through Rust and generate HTML. Replay the cache with an invalid token and zero provider calls.
-- [x] Pass Python, Rust and packaging checks and one scoped independent review. Update the architecture documentation and SVG, module instructions, strategy README, and factor storage, CLI and E2E instructions.
+Because fixing `F-12` removes `signal_id` sensitivity during board-lot cash allocation, economic equivalence was verified against replaying the *legacy request on the corrected Rust runtime* rather than preserving buggy order priority:
 
-## Decisions
+- **Catalog & selection parity:** The managed catalog persisted 11 definitions, 220 materializations, and 220 factor Parquet files whose source rebuilds reproduced identical definition digests. All-industry Top-1 matched all 560 selection rows across 20 dates (`108.3896%` total return; `CNY 1,041,947.75675909` ending NAV), and Top-10-industries × Top-1 matched all 200 selection rows (`47.1649%` total return; `CNY 735,824.26104058` ending NAV under deterministic `instrument_id` lot sizing).
+- **Zero-call v3 bundle replay:** Initial and replay directories for each variant contained 540 byte-identical files (41 snapshots, 11 definitions, 220 materializations, 220 factor Parquet objects, summary JSON, Markdown, and standalone HTML) with `0` provider calls under an invalid token.
 
-Python owns computation, management and evaluation of factors. Rust receives exact signals and owns trading rules, execution and accounting. The user chose real end-to-end replay as the main acceptance check for research strategy migration. Public interfaces, correctness fixes and factor infrastructure still used test-driven development.
+## Verification Record
 
-Reuse the real ten-year cache. `ResearchDataSource` returns evidence for the immutable Parquet object found in the cache. The factor manager receives a candidate input snapshot without depending on a particular cache implementation.
+- **Independent review closure:** Resolved 3 High findings (covering missing-status fallbacks, parent factor dependency verification, and forward-label alignment) with regression tests; re-review confirmed zero remaining Critical or High issues.
+- **Test, type, and package suites:** Python passed 164 tests (0 skipped, including live stock/ETF Tushare E2E suites with `TUSHARE_TOKEN` isolated to an external `0600` file and 0 credential scan matches), Ruff, and strict `mypy` across 55 source files. Rust passed `cargo fmt --check`, `cargo clippy`, workspace tests, doc-tests, and Cargo workspace packaging. Installing the built wheel into a clean virtual environment verified `trademaster.factors`, strategy imports, and `tm-factor list` (returning all 11 definitions). Architecture diagrams (`docs/architecture/trademaster-v1-architecture.svg`) passed structural and 4000px visual checks, and all local Markdown links resolved.
 
-Keep all legacy selection rows identical. Fixing F-12 can change older stored results. Use a replay of the *old request on the corrected runtime* as the economic reference. Restoring signal-ID ordering merely to match an old digest would restore the allocation bug.
+## Changed Files
 
-## Historical results
-
-- The factor root held 11 definitions, 220 materializations and 220 factor Parquet files. Rebuilding definitions from source reproduced the catalog hashes.
-- All-industry Top1 reproduced all 560 selection rows over 20 dates. NAV, fills, rejections and final positions matched replay of the old request on the corrected runtime. Total return was 108.3896% and ending NAV was 1,041,947.75675909 CNY.
-- Ten industries × Top1 reproduced all 200 rows over 20 dates and matched the corrected economic reference. Total return was 47.1649% and ending NAV was 735,824.26104058 CNY.
-- Each variant's final and replay directories contained 540 byte-identical files. Both used zero provider calls. Each v3 bundle included 41 snapshots, 11 definitions, 220 materializations, 220 factor objects, and the summary and Markdown report.
-- The review found three High issues in the status fallback, parent dependencies and label alignment. The same reviewer checked the fixes and found no remaining Critical or High issues in scope.
-
-## Verification evidence
-
-1. Regression tests first reproduced mixed signal times, missing limits, too few industries, definition/graph failures, materialization cache corruption, forged parent values, label timing/alignment errors and target allocation changes caused by signal IDs.
-2. The live stock and ETF end-to-end tests reported `2 passed`. A separate ETF test rejected missing status when no explicit limit rule was available. The final Python suite with real credentials reported `164 passed`, zero skipped. No token literal appeared in the scan. The external credential file had mode 0600.
-3. Ruff, strict mypy (55 source files), Cargo fmt, Clippy, workspace tests and doc-tests passed. Wheel, sdist and Cargo workspace packaging passed. In a clean virtual environment the wheel imported `trademaster.factors` and the stable strategy package, and `tm-factor list` returned 11 definitions.
-4. Factor CLI describe/graph smoke tests passed. IC, RankIC, quantile returns, spread and turnover matched hand calculations and could be persisted.
-5. No local documentation link was missing. Strategy/factor CLI help matched README parameters. Structural SVG and rsvg checks passed. The complete 4000px diagram and crops of the title, research, output and legend received a visual check.
-
-## Changed files
-
-- `specs/INDEX.md`
-- `specs/20260823-m7-factor-management-strategy-refactor.md`
-- `AGENTS.md`
-- `docs/factor-management.md`
-- `docs/architecture/overview.md`
-- `docs/architecture/trademaster-v1-architecture.svg`
-- `python/trademaster/data/research.py`
-- `python/trademaster/data/__init__.py`
-- `python/trademaster/factors/`
-- `python/trademaster/e2e/__init__.py`
-- `python/trademaster/e2e/real_tushare.py`
-- `python/trademaster/strategies/AGENTS.md`
-- `python/trademaster/strategies/industry_fundamental/`
-- `python/trademaster/strategies/industry_fundamental_top5/`
-- `crates/tm-engine/src/lib.rs`
-- `crates/tm-engine/tests/scheduled_strategy.rs`
-- `tests/test_factor_management.py`
-- `tests/test_factor_evaluation.py`
-- `tests/test_factor_cli.py`
-- `tests/test_fundamental_managed_factors.py`
-- `tests/test_industry_fundamental_top5.py`
-- `tests/test_fundamental_strategy_data_cache.py`
-- `tests/test_e2e_orchestrator.py`
-- `tests/test_real_tushare_e2e.py`
-- `pyproject.toml`
-- `artifacts/strategies/industry-fundamental-managed-top1-final-v2{,-replay}/`
-- `artifacts/strategies/industry-fundamental-managed-top10-industries-top1-final-v2{,-replay}/`
-
-## Open questions
-
-None. The default migration retained both strategies' economic conventions and the real data cache.
+- `specs/INDEX.md`, `specs/20260823-m7-factor-management-strategy-refactor.md`, `AGENTS.md`, `pyproject.toml`
+- `docs/factor-management.md`, `docs/architecture/overview.md`, `docs/architecture/trademaster-v1-architecture.svg`
+- `python/trademaster/data/research.py`, `python/trademaster/data/__init__.py`, `python/trademaster/factors/`
+- `python/trademaster/e2e/__init__.py`, `python/trademaster/e2e/real_tushare.py`
+- `python/trademaster/strategies/AGENTS.md`, `python/trademaster/strategies/industry_fundamental/`, `python/trademaster/strategies/industry_fundamental_top5/`
+- `crates/tm-engine/src/lib.rs`, `crates/tm-engine/tests/scheduled_strategy.rs`
+- `tests/test_factor_management.py`, `tests/test_factor_evaluation.py`, `tests/test_factor_cli.py`, `tests/test_fundamental_managed_factors.py`, `tests/test_industry_fundamental_top5.py`, `tests/test_fundamental_strategy_data_cache.py`, `tests/test_e2e_orchestrator.py`, `tests/test_real_tushare_e2e.py`
+- `artifacts/strategies/industry-fundamental-managed-top1-final-v2{,-replay}/`, `artifacts/strategies/industry-fundamental-managed-top10-industries-top1-final-v2{,-replay}/`

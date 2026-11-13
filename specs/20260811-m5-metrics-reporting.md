@@ -1,48 +1,34 @@
-# M5 performance metrics and reports
+# M5: Performance Metrics, Exposure Diagnostics, and Standalone Reports
 
-Status: completed
-Owner: Codex
+**Status:** Completed | **Date:** 2026-08-11 | **Updated:** 2026-11-05 | **Scope:** Strategy and benchmark metrics, exposure diagnostics, and standalone Plotly HTML reports (`trademaster.reporting`, `trademaster.e2e`)
 
-## Scope and interfaces
+## Motivation and Scope
 
-M5 reads the saved run records, benchmark series, and exposure observations. It produces reproducible metrics and a standalone Plotly HTML report. The report identifies missing trade data and names the actual benchmark index used.
+Milestone M5 transforms persisted Rust run traces, benchmark index series, and classification exposures into reproducible performance summaries and self-contained offline HTML reports. Missing trade observations, undefined statistical ratios, and exact benchmark index identities are surfaced explicitly rather than interpolated or proxied.
 
-- `PerformanceSeries` holds strictly increasing UTC timestamps, positive NAV, cash, and market value.
-- `BenchmarkSeries` identifies a benchmark and its UTC timestamps and closes. Comparison uses the trading sessions shared by the benchmark and the strategy.
-- `TradeSummary` records traded notional, commission, tax, transfer fees, slippage, and the denominator used for turnover.
-- `ExposureObservation` records the session, industry taxonomy and label, market-cap bucket, and portfolio weight.
-- `StrategyMetrics` includes total and annualized return, annualized volatility, Sharpe, Sortino, Calmar, maximum drawdown and its peak, trough and recovery times, longest period underwater, positive-return share, best and worst sessions, VaR/CVaR, tracking error, information ratio, beta, alpha, turnover, total costs, and costs as a fraction of traded notional.
+## Design and Public Interfaces
 
-## Reporting
+- **`PerformanceSeries`:** Holds strictly increasing UTC valuation timestamps alongside non-negative cash, market value, and positive net asset value (`cash + market_value == NAV`).
+- **`BenchmarkSeries`:** Identifies each benchmark index alongside its UTC session timestamps and closing levels. Strategy-to-benchmark comparisons align strictly on shared trading sessions without forward-filling missing dates or substituting proxy indices.
+- **`TradeSummary`:** Aggregates traded notional, brokerage commissions, stamp duty, transfer fees, slippage, and the average-NAV turnover denominator (preserved even when a run executes zero fills).
+- **`ExposureObservation`:** Records per-session industry taxonomy/label, market-cap bucket, and portfolio weight summing to `1.0` across held assets and cash.
+- **`StrategyMetrics`:** Computes total and annualized return, annualized volatility, Sharpe, Sortino, and Calmar ratios, maximum drawdown with peak/trough/recovery timestamps, longest underwater duration, positive-session hit rate, best and worst single-session returns, historical VaR/CVaR, benchmark tracking error, information ratio, beta, alpha, turnover, total trading costs, and cost-to-notional ratio. Undefined ratios (such as zero-volatility Sharpe, zero-variance beta/alpha/correlation, or unrecovered drawdown recovery time) return `None`.
 
-Show normalized cumulative returns for the strategy and any number of user-selected benchmarks on one chart. Separate plots show drawdown, days underwater, rolling volatility and Sharpe, and monthly returns as a heatmap. The report also includes stacked industry and market-cap exposures, turnover and costs, and a table of the main metrics. Embed Plotly JS for offline viewing. Give each chart a title and units, and distinguish missing observations from undefined metrics. The manifest identifies the `run_id`, `snapshot_id`, `strategy_id`, benchmarks, and input digests.
+### Standalone HTML Report and Monthly Return Basis
 
-Each month’s return is its last observed closing NAV divided by the previous calendar month’s last observed closing NAV, minus one. The first month starts at the first observed NAV. The last month ends at the last available close, even when the sample ends mid-month. A month with no observations and the month immediately after it have no return value. New event reports record `monthly_return_basis: previous_month_close` in `report-input.json`. When the field is absent, replay uses the archived within-month calculation, chart guide and input digest to reproduce the original HTML.
+Reports bundle Plotly.js inline for offline viewing and render cumulative return curves against any number of benchmarks, drawdown and days-underwater charts, rolling volatility and Sharpe series, a monthly return heatmap, stacked industry and size exposures, turnover and cost breakdowns, a metrics summary table, and a run manifest (`run_id`, `snapshot_id`, `strategy_id`, benchmarks, and SHA-256 input digest).
 
-## Test and implementation sequence
+Each calendar month's return equals that month's last observed closing NAV divided by the *previous* calendar month's last observed closing NAV, minus one (`monthly_return_basis: previous_month_close` in `report-input.json`):
 
-1. Red. Hand-calculate returns, volatility, Sharpe ratio, maximum drawdown, time to recovery, and time underwater from a NAV series.
-2. Green. Implement performance metrics as pure functions.
-3. Red. Test benchmark alignment, tracking error, information ratio, beta, alpha, turnover, and costs.
-4. Green. Implement benchmark and trade metrics.
-5. Red. Require industry and market-cap weights to sum to 1. Test unknown buckets and duplicate observations. Require the HTML to include multiple benchmarks, drawdown, exposures, and the manifest.
-6. Green. Implement exposure diagnostics and the standalone Plotly report.
-7. Integrate using real Parquet files in run format and conduct one independent milestone review.
+- The initial month is measured from the first observed NAV, and the final month ends at the last available close even when the sample ends mid-month.
+- Any calendar month with zero observations—and the month immediately following that gap—reports no monthly return (`None`).
+- When replaying older archived event bundles that omit `monthly_return_basis`, the report builder selects the legacy within-month calculation, chart guide, and input digest so archived HTML outputs reproduce byte for byte.
 
-## Acceptance criteria
+## Verification and Regression Record
 
-Match hand-calculated results field by field. Return `None` for undefined values, including ratios with zero volatility and a recovery time when a drawdown has never recovered. When the calendars differ, require an explicit choice to use only their common sessions. Do not fill missing observations with earlier values or substitute a proxy index. The HTML must open offline as one file and identify input data and units. Required checks included full Python tests, Ruff, strict mypy, wheel/sdist builds, and Rust regression tests. The full system review was scheduled after M6 end-to-end testing.
-
-## Implementation and verification record
-
-- M0 through M4 were complete. Red 1 failed to collect `test_reporting_metrics.py` because the reporting module did not exist. After implementation, 3 tests covered hand-calculated performance, drawdown, recovery, undefined ratios, turnover, and costs.
-- Red 2 failed to collect `test_reporting_report.py` because interfaces including `BenchmarkSeries` were missing. After implementation, 2 tests covered strict benchmark alignment, tracking and regression metrics, exposures, and standalone HTML.
-- The first focused run passed 5 tests. One independent review found 0 Critical and 4 High issues involving NAV components, costs when there are no fills, benchmark metrics with short samples or zero variance, and verification of the metrics and manifest embedded in HTML.
-- Failing regression tests led to enforcing `cash + market_value = NAV`, preserving individual cost components and average NAV, and returning `None` for undefined beta, alpha, or correlation. The HTML builder recalculates strategy metrics and records a deterministic input SHA-256. No further local review was held.
-- Final checks passed for 6 focused tests and 128 Python tests, including the real Tushare smoke test. Ruff, strict mypy (30 source files), wheel/sdist builds, Rust formatting, Clippy, 39 Rust tests, doc-tests, the diff check, and the scan for literal credentials passed. M5 was complete.
-
-### Monthly returns across a month boundary
-
-- The HTML regression initially reported a 10% January gain from 121 to 133.1. Including the move from December’s last close of 110 gives 21%. The new bundle test also failed because the report inputs omitted the calculation basis.
-- The [reporter](../python/trademaster/reporting/__init__.py) now uses the previous month’s close. The [event bundle](../python/trademaster/e2e/__init__.py) saves the basis and selects it during replay. The [heatmap test](../tests/test_reporting_report.py) covers a partial first month, a year boundary, a single-observation month, a missing month and the resumption of returns. The [bundle tests](../tests/test_e2e_orchestrator.py) rebuild both formats, including an unversioned two-month report checked against its original SHA-256.
-- The weekly momentum event ledger closed at CNY 107,650.01 on March 29, 2024, CNY 109,945.27 on April 1 and CNY 105,129.30 on April 30. April’s return is −2.34%. The archived report used April 1 as its baseline and showed −4.38%. All three original TuShare demo bundles reproduced their saved HTML bytes. The 14 reporting, orchestrator and demo runner tests passed.
+| Verification Stage | Verified Behavior |
+|---|---|
+| Core metrics & reports (`test_reporting_metrics.py`, `test_reporting_report.py`) | Matched hand-calculated return, volatility, Sharpe, drawdown, recovery, underwater duration, benchmark alignment, tracking error, beta/alpha, turnover, exposure sums (`1.0`), and offline multi-benchmark HTML output (5 initial suites). |
+| Independent review & fixes | Resolved 4 High findings (0 Critical): enforced `cash + market_value == NAV` on `PerformanceSeries`; preserved zero-fill cost breakdowns and average-NAV denominators; returned `None` for undefined beta, alpha, and correlation on short or constant-variance series; and required the HTML builder to recompute `StrategyMetrics` from inputs and embed a deterministic input SHA-256. |
+| Milestone closure (2026-08-11) | 6 focused reporting suites and 128 total Python tests passed (including live Tushare smoke test), alongside Ruff, strict `mypy` (30 source files), wheel/sdist builds, 39 Rust workspace tests, doc-tests, `cargo fmt --check`, `cargo clippy -D warnings`, and credential scans (0 matches). |
+| Cross-month boundary update (2026-11-05) | Updated the [reporter](../python/trademaster/reporting/__init__.py) to anchor monthly returns on the prior month's close (fixing e.g. a `110 -> 121 -> 133.1` boundary sequence to report `21%` rather than `10%`), persisted `monthly_return_basis` in the [event bundle](../python/trademaster/e2e/__init__.py), and verified partial first months, year boundaries, single-observation months, and missing-month gaps in [heatmap tests](../tests/test_reporting_report.py) and [bundle tests](../tests/test_e2e_orchestrator.py) (including SHA-256 reproduction of unversioned archives). On the 2024 weekly momentum ledger (`CNY 107,650.01` on March 29, `CNY 109,945.27` on April 1, `CNY 105,129.30` on April 30), April's return is `-2.34%` (versus `-4.38%` under the legacy April 1 baseline), while all three archived Tushare demo bundles reproduced their saved HTML bytes across 14 passing reporting, orchestrator, and demo tests. |

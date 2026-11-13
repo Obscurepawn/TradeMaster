@@ -5,11 +5,11 @@ build-backend = "maturin"
 [project]
 name = "trademaster"
 version = "0.1.0"
-description = "A-share research and event backtesting framework"
+description = "Reproducible quantitative research and Rust-powered portfolio backtesting framework"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12"
-keywords = ["a-share", "backtesting", "factor-research", "quant", "rust"]
+keywords = ["a-share", "backtesting", "factor-research", "point-in-time", "portfolio", "quant", "rust"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Financial and Insurance Industry",

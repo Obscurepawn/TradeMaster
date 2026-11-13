@@ -1,5 +1,6 @@
 [package]
 name = "tm-core"
+description = "Core fixed-point domain types, run schemas, and Parquet artifact contracts for TradeMaster"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

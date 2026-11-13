@@ -1,47 +1,33 @@
-# M4 shared event loop
+# M4: Unified Rust Event Runtime
 
-Status: completed
-Owner: Codex
+**Status:** Completed | **Date:** 2026-08-11 | **Scope:** Deterministic event loop, strategy adapters, settlement ordering, and in-memory audit traces (`tm-engine`)
 
-## Scope and public interfaces
+## Motivation and Scope
 
-Python can precompute signals in batches. Strategies that depend on events can decide during replay. M4 sends both through the same Rust `OrderValidator`, `ExecutionModel`, and `Ledger`. It keeps the complete run trace in memory. Parquet writing, the run manifest, and reporting were scheduled for M5/M6.
+Milestone M4 unifies precomputed Python signal batches and event-driven online strategies on a single Rust execution loop. Both strategy modes implement `StrategyAdapter` and pass through the same `OrderValidator`, `ExecutionModel`, and `Ledger` instances from [M3](20260811-m3-rust-rules-ledger.md), recording a deterministic `RunTrace` in memory for downstream Parquet persistence and reporting ([M5](20260811-m5-metrics-reporting.md)–[M6](20260811-m6-full-e2e.md)).
 
-- `ScheduledSignalStrategy` consumes quantity signals ordered by `eligible_execution_time` and converts them to stable `OrderIntent` records at the eligible event. In M4, target weights require an explicit portfolio rebalancer to allocate cash.
-- `EventLoop` orders settlement, session open, and bar close by event time and phase.
-- `RuntimeInstrumentRegistry` supplies an immutable `InstrumentSpec` by instrument ID and rejects unknown instruments.
-- `RunTrace` preserves signals, orders, acceptances, rejections, executions, ledger effects, and account snapshots in event sequence for the shared Arrow artifact tables.
-- Both precomputed signals and online strategies implement `StrategyAdapter`. The event loop uses that interface for either source.
+## Design and Public Interfaces
 
-## Event order
+- **`StrategyAdapter` and `ScheduledSignalStrategy`:** `StrategyAdapter` provides a single callback contract for both online strategies and precomputed signal tables. `ScheduledSignalStrategy` consumes precomputed quantity signals ordered by `eligible_execution_time` exactly once, converting them into deterministic `OrderIntent` records at the first eligible market event (in M4, target-weight signals require an explicit portfolio rebalancer before entering quantity-only adapters).
+- **`RuntimeInstrumentRegistry`:** Resolves immutable `InstrumentSpec` records by `instrument_id` and fails closed on unknown instruments.
+- **`EventLoop`:** Orders settlement, session-open execution, and session-close valuation deterministically by timestamp and event phase, halting immediately if any validator, execution model, or ledger step returns an error.
+- **`RunTrace`:** Captures consumed signals, order intents, acceptances, rejections, fills/expiries, ledger effects, account snapshots, and monotonic `event_seq` numbers required by the eleven shared `trademaster.run-artifacts/v1` tables.
 
-1. Settlement unlocks lots whose holding period has ended.
-2. Take the opening portfolio view at the time of the session-open market snapshot.
-3. The strategy reads that snapshot and portfolio and produces orders that are eligible for submission.
-4. Build a `ValidationView` for each order's instrument. Record acceptance or rejection.
-5. Process accepted orders for the batch. Apply each execution to the ledger atomically.
-6. At bar close, update the valuation and let the strategy observe it. A signal formed at the close is first eligible at the next session open.
+### Per-Session Event Sequence
 
-Within an event, keep instrument, order, and fill ordering stable. Stop the run on any component error.
+1. **Settlement:** Unlock T+1 lots whose holding period has completed at the start of the trading session.
+2. **Opening snapshot:** Materialize the read-only portfolio and market view at the session-open timestamp.
+3. **Order submission:** Invoke `StrategyAdapter` on the opening view to emit eligible `OrderIntent` records in stable instrument and signal order.
+4. **Sequential validation, execution, and posting:** For each submitted order, build an updated `ValidationView` reflecting prior fills in the same batch, record acceptance or rejection, execute accepted orders via `ExecutionModel`, and apply each resulting `LedgerEffect` atomically before sizing or validating the next order.
+5. **Closing valuation:** At session close, mark positions to closing prices and expose the updated valuation to the strategy; any signal formed from session `T` closing prices becomes eligible no earlier than the session `T+1` open.
 
-## Test and implementation sequence
+## Verification and Regression Record
 
-1. Red. Test scheduled quantity signal timing, one-time consumption, stable order IDs, and unknown instruments.
-2. Green. Implement the adapter for precomputed signals.
-3. Red. Check the complete two-session trace from purchase and same-day sale rejection to settlement and sale.
-4. Green. Implement `EventLoop` and `RunTrace`.
-5. Red. Require matching executions and NAV for online and precomputed strategies given equivalent signals.
-6. Green. Use the shared strategy interface and verify deterministic replay.
-7. Run integration checks and conduct one independent review.
+Equivalence tests verified that precomputed signal tables and online `StrategyAdapter` implementations produce identical fills, ledger postings, final NAV, and account state hashes when fed the same data snapshot and configuration.
 
-## Acceptance criteria
-
-A run uses one validator, execution model, and ledger instance for either strategy type. Each scheduled signal is consumed once. A signal formed at the close waits until the next eligible open. Replaying the same data snapshot, configuration, and signals reproduces the trace and state hashes. Run Rust formatting, Clippy, workspace tests and doc-tests, and the Python/shared-schema regression suite. Schedule the final system review after M6 end-to-end testing.
-
-## Implementation and verification record
-
-- M0 through M3 were complete. Red 1 failed to compile `scheduled_strategy.rs` because `ScheduledSignalStrategy` was missing. The 2 passing tests checked waiting from close to next open, one-time consumption, integral quantities, and rejection of unsupported target weights.
-- Red 2 failed to compile `unified_event_loop.rs` because `EventLoop` was missing. The subsequent test followed precomputed signals through validation, execution, T+1 settlement, ledger updates, and final NAV.
-- The independent review found 0 Critical and 4 High issues involving missing settlement, quantity deltas for targets due at the same open, trace completeness and leftover signals, and cash computed only once before the batch. One round of regression tests and fixes addressed all four.
-- `EventLoop` checks that settlement precedes open. For targets due together, the adapter keeps track of the share count each pending order would leave before it sizes the next one. `RunTrace` records signals and `event_seq`, and the strategy exposes its pending count. The loop revalues the portfolio for each order, executes the order, and posts it before processing the next one.
-- Final Rust checks passed for 39 workspace tests, doc-tests, formatting, and Clippy `-D warnings`. Python passed 122 tests with 0 skipped. Ruff, strict mypy, and `git diff --check` passed. No second milestone review was held.
+| Test Suite / Review Stage | Verified Behavior |
+|---|---|
+| Scheduled signals (`crates/tm-engine/tests/scheduled_strategy.rs`) | Verified close-to-next-open (`T+1`) eligibility waiting, single-consumption semantics, integer share deltas, stable order IDs, unknown-instrument rejection, and rejection of unallocated target-weight intents (2 suites). |
+| Unified event loop (`crates/tm-engine/tests/unified_event_loop.rs`) | Traced multi-session execution from purchase and same-day T+1 sale rejection through next-session settlement, FIFO sale, ledger postings, and deterministic replay hashes. |
+| Independent review & fixes | Resolved 4 High findings (0 Critical) with regression tests: (1) enforced that settlement always precedes session open; (2) tracked pending share-count deltas when multiple signals for the same instrument fall due at one open; (3) recorded consumed signals, `event_seq`, and pending-signal counts in `RunTrace`; and (4) revalued available cash and holdings after each order fill rather than computing cash once before the batch. |
+| Final milestone checks | 39 Rust workspace tests and doc-tests, `cargo fmt --check`, `cargo clippy -D warnings`, 122 Python tests (0 skipped), Ruff, strict `mypy`, and `git diff --check` all passed. |

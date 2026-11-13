@@ -1,164 +1,39 @@
-# IndexOne data source
+# IndexOne Research Data Source Integration
 
-Status: completed.
+**Status:** Completed | **Date:** 2026-11-07 | **Scope:** Schema-validated IndexOne HTTP client, immutable Parquet/DuckDB evidence cache, and `tm-indexone` CLI (`trademaster.data.indexone`, `trademaster.data.indexone_client`)
 
-## Purpose and scope
+## Motivation and Scope
 
-Researchers can download IndexOne end-of-day prices, company fundamentals,
-security reference data and FX observations, keep immutable Parquet evidence,
-and reuse the same request offline. The source implements the existing
-`ResearchDataSource` interface. A CLI and README example provide the first call.
+This specification integrates IndexOne as a read-only `ResearchDataSource` (`IndexOneDataSource`) capable of downloading end-of-day (EOD) prices, company fundamentals, security reference metadata, and foreign-exchange (FX) observations into content-addressed Parquet files indexed by DuckDB for deterministic offline reuse (`tm-indexone`).
 
-This does not replace the TuShare canonical provider or relax its provenance
-checks. IndexOne rows are provider observations, not proof of historical trading
-permission, a complete exchange calendar or original publication/revision times.
-The daily snapshot loader still supplies that evidence before running a strategy.
-Index creation, simulation, account changes and delivery operations are outside
-this data-source integration.
+### Provenance Boundary and Limitations
 
-## Provider contract
+IndexOne complements rather than replaces the canonical Tushare Pro store, and it never implicitly enables `trusted_imports`:
 
-The official [authentication guide](https://indexone.io/docs/start/authentication)
-and [execution reference](https://indexone.io/docs/reference/execution-engine),
-checked against the public [operation catalog](https://api.indexone.io/schema),
-define the request. The catalog is authoritative for current operation names,
-parameters, projections and output types.
+- **Observations vs. tradability evidence:** Cached IndexOne Parquet files prove what the provider returned at collection time; they do *not* establish complete exchange calendars, opening buy/sell permissions, generic split/cash-dividend feeds (IndexOne's index-level applied-action ledger is not a stock corporate-action feed), or point-in-time restatement histories. Snapshot loaders must still supply explicit session calendars and trading-status evidence before running a daily backtest, and financial `report_period` dates must never be substituted for publication (`available_at`) timestamps.
+- **Read-only scope:** Index creation, backtest simulation, account mutations, and delivery operations on the IndexOne platform are outside this integration.
 
-- Only `i1_core_eod`, `i1_core_fundamentals`, `core_securities_reference` and
-  `i1_core_fx` are allowed. Public aliases are `eod`, `fundamentals`, `securities`
-  and `fx`.
-- A single read operation is sent to `POST /execute` without `websocket_id` or
-  `team_id`. The secret value from `INDEXONE_API_KEY` is sent as `x-api-key`.
-  The key ID is management metadata and is not an authentication credential.
-- Validate projections and parameters against `GET /schema`. Core filters use
-  `field`, `operator`, `value`; projections use `attributes`. Unsupported schema
-  shapes and provider errors fail explicitly. Empty rows remain empty results.
-- Accept both the documented `operations` row-array envelope and the live
-  operation-ID-keyed envelope with column arrays. Live verification returned
-  the latter. Require the requested node identity and equal column lengths;
-  reject unfinished, failed, suspended or truncated results.
-- `/execute` has no documented pagination. `page_limit` is a local response-row
-  bound for this implementation; exceeding it fails without publishing a partial
-  result. Users split large queries by instrument or date. Never request the
-  streaming mode that truncates inline output.
-- Use bounded retries for transient HTTP failures, and fail immediately on
-  credential/permission and invalid-request failures. Keep credentials, provider
-  error bodies and secret-bearing exception chains out of errors and artifacts.
+## Provider Contract and Cache Architecture
 
-## Cache and observable behavior
+Request validation and transport follow the official [authentication guide](https://indexone.io/docs/start/authentication) and [execution reference](https://indexone.io/docs/reference/execution-engine), validated dynamically against the public [operation catalog](https://api.indexone.io/schema):
 
-`IndexOneDataSource(root=..., client=...)` returns `ResearchQueryResult` from
-`query_with_evidence`. A default client is created lazily from the environment
-only on a cache miss. The normalized operation, parameters, selected fields and
-row bound identify a request. DuckDB indexes successful requests and their
-immutable hash-named Parquet objects. File metadata binds the request and fetch
-time; reads recheck file hash, metadata, schema and row count.
+- **Whitelisted read operations:** Restricts queries to `i1_core_eod` (`eod`), `i1_core_fundamentals` (`fundamentals`), `core_securities_reference` (`securities`), and `i1_core_fx` (`fx`), dispatched as single-node `POST /execute` payloads without `websocket_id` or `team_id`.
+- **Credential isolation:** Reads the secret API key exclusively from `INDEXONE_API_KEY` (creating the default HTTP client lazily only on a cache miss) and sends it via `x-api-key` (treating key IDs as non-secret management metadata). Bounded retries apply only to transient HTTP errors; authentication, permission, and invalid-request errors fail immediately while scrubbing keys, raw error bodies, and secret-bearing exception chains from logs and artifacts.
+- **Schema & dual-envelope validation:** Validates `field`/`operator`/`value` filters and `attributes` projections against `GET /schema`. Parses both the documented `operations` row-array envelope and the live operation-ID-keyed columnar-array envelope, requiring matching node IDs, equal column lengths, and completed execution status while rejecting unfinished, failed, suspended, or truncated responses.
+- **Local row-bound guard (`page_limit`):** Because `POST /execute` provides no pagination cursor, `page_limit` enforces a strict client-side row ceiling (never enabling inline-truncating streaming modes); responses reaching the ceiling fail closed without publishing partial Parquet objects so callers split large queries explicitly by instrument or date range.
+- **Content-addressed DuckDB/Parquet cache:** `IndexOneDataSource.query_with_evidence()` keys requests by normalized operation, parameters, projected attributes, and `page_limit`. Exact cache hits make zero network calls and require no `INDEXONE_API_KEY`; `offline=True` fails closed on cache misses; `refresh=True` records a new immutable Parquet observation while preserving older Parquet objects referenced by existing **data snapshots**. Reads reverify SHA-256 digests, embedded request/fetch metadata, Arrow schemas, and row counts.
 
-An exact cached query makes no network calls and works without a credential.
-`offline=True` rejects a cache miss. A failed/truncated/malformed query publishes
-no successful cache entry. `refresh=True` obtains a new observation while old
-Parquet evidence remains available to existing data snapshots. Cache timestamps
-describe collection, never historical publication. The cache proves the returned
-response, not full market coverage or point-in-time financial correctness.
+## Changed Files
 
-Each CLI request prints the row count and evidence file path. Documentation shows
-how to inspect raw/adjusted EOD columns and financial publication fields, then
-links to the existing explicit daily-snapshot import workflow. Financial report
-periods must not be used as feature publication times. The source supplies no
-generic cash-dividend or split feed; IndexOne's index-specific applied-action
-ledger is not a substitute.
+- **Client & cache store:** `python/trademaster/data/indexone_client.py`, `python/trademaster/data/indexone.py`, `python/trademaster/data/__init__.py`, `pyproject.toml` (`tm-indexone` console entry point).
+- **Test suites:** `tests/test_indexone_client.py`, `tests/test_indexone_source.py`.
+- **Documentation & guides:** `README.md`, `docs/reference/indexone.md`, `docs/reference/commands.md`, `docs/reference/data-and-research.md`, `docs/README.md`, `.skills/trademaster-backtest/`, `AGENTS.md`, `python/trademaster/data/AGENTS.md`.
 
-## Acceptance and verification
+## Verification and Publication Record
 
-Start with failing tests for the client and cache. Use injected HTTP responses
-only at the network boundary and real temporary Parquet/DuckDB files elsewhere.
-
-1. Validate key-only authentication, live-schema request construction, supported
-   response types, empty results and typed failures. Retry only transient errors.
-2. Cache hits and offline reloads return the same data/evidence without a client.
-   Different requests cannot reuse each other's cached data. Refresh preserves
-   old objects. Tampered bytes or catalog metadata fail closed.
-3. Reject missing columns, invalid types and oversized/truncated responses before
-   successful publication. Check artifacts and exception strings for test keys.
-4. Exercise the CLI/README workflow against a documented fixture. If an API key
-   is available in the environment, perform a small read-only live smoke query;
-   otherwise report that live verification was skipped.
-5. Run focused tests, the Python regression suite, Ruff, strict mypy, documentation
-   link/skill validation, and an independent review of provider and cache boundaries.
-
-## Work record
-
-Current state: the HTTP client, evidence cache, public exports and `tm-indexone`
-command are implemented. The README and source guide describe the supported
-queries and the separate daily-snapshot preparation step. Existing unrelated
-working-tree changes are preserved.
-
-Decisions: use the provider-neutral research source interface and a separate
-IndexOne cache, since the canonical object store verifies TuShare-specific
-raw/staging normalization. Do not silently select `trusted_imports`.
-
-Changed files:
-
-- `python/trademaster/data/indexone_client.py`: schema-validated HTTP requests,
-  key-only authentication, typed responses and bounded failure handling.
-- `python/trademaster/data/indexone.py`: immutable Parquet publication, DuckDB
-  request cache, integrity checks, offline/refresh modes and CLI.
-- `python/trademaster/data/__init__.py`, `pyproject.toml`: public API and command.
-- `tests/test_indexone_client.py`, `tests/test_indexone_source.py`: transport,
-  schema, response, cache, integrity, credential-isolation and CLI tests.
-- `README.md`, `docs/reference/indexone.md`, command/data references, docs index,
-  `.skills/trademaster-backtest/`, and root/data `AGENTS.md`: user and contributor
-  guidance.
-
-Red/green evidence:
-
-- Both new test modules initially failed collection with `ModuleNotFoundError`
-  for the missing client/source modules.
-- Client hardening then produced three failing cases for a non-ASCII key,
-  unexpected transport error leakage and an ignored envelope error. All pass
-  after the client corrections: 45 client tests pass.
-- All 13 source/cache tests pass with real temporary Parquet and DuckDB files,
-  including offline reads, refreshed evidence, corruption rejection and CLI use.
-- Fresh installation with `uv sync --locked --extra dev` succeeded; the installed
-  `tm-indexone --help` command works. Ruff and strict mypy over 107 Python/test
-  files passed. Skill validation passed.
-- Initial full regressions passed: 419 tests, with three TuShare live tests
-  skipped because their environment token was absent.
-- The first credentialed EOD smoke query returned HTTP 200 with four rows in an
-  operation-ID-keyed, column-array response. The parser correctly rejected the
-  undocumented envelope without caching it. The added regressions first
-  produced nine failures and 62 passes. The corrected parser supports both
-  envelopes and checks column lengths and completion state: 71 client tests and
-  13 cache/source tests pass.
-- Live verification with the supplied credential then succeeded for all four
-  datasets: four Apple EOD observations for January 2–5, 2024; four quarterly
-  financial records for 2023 including `filingDate`, `acceptedDate`, revenue and
-  net income; one security-reference row; and 138 FX observations for January 2,
-  2024. The README Python block and financial-guide block were executed directly.
-  The key was supplied only to the test process environment and was not saved.
-- The guide's request JSON was extracted and passed to the installed
-  `tm-indexone ... --offline` command without a key. It returned the same
-  four-row EOD Parquet object and its request/content hashes.
-- Final regressions: `uv run --no-sync pytest -q` passed 445 tests in 49.46 seconds;
-  three TuShare live tests were skipped because `TUSHARE_TOKEN` was not set.
-  Ruff, formatting checks on the four new Python files, strict mypy over 107
-  files, skill validation and `git diff --check` passed. All 180 local links and
-  heading anchors in the affected guidance resolved. README/source-guide writing
-  checks passed.
-- Independent review found no remaining issues in the credential boundary,
-  response validation, cache integrity, offline/refresh behavior or documentation.
-  A follow-up review checked the live keyed/columnar response parser separately.
-
-Next step: no work remains for this data-source scope. A complete historical US
-backtest still requires the calendar, opening permissions and corporate-action
-evidence described in the data preparation guide.
-
-## Publication verification — November 7, 2026
-
-An isolated checkout of the staged trading-rule and IndexOne changes installed
-successfully with the committed lockfile. Python tests passed 442 cases; six
-tests were skipped because the clean checkout had no external TuShare caches,
-demo bundles or token. The Rust workspace passed 67 tests. Rust formatting,
-Clippy with warnings denied, Ruff, strict mypy and the installed IndexOne command
-also passed. Other strategy-research work in the shared workspace was excluded
-from this publication.
+| Verification Stage | Scope and Outcome |
+|---|---|
+| Transport, dual-envelope & cache suites | **71 client tests** (`test_indexone_client.py`, covering non-ASCII key rejection, transport-error scrubbing, schema checks, and both row-array and live keyed/columnar envelopes) and **13 real Parquet/DuckDB cache tests** (`test_indexone_source.py`, covering offline reads, `refresh=True` immutability, byte/catalog tamper rejection, and CLI output) all passed. |
+| Live credentialed smoke & offline replay | With `INDEXONE_API_KEY` supplied only to the test process environment, live queries succeeded across all four operations: 4 Apple EOD rows (`2024-01-02..2024-01-05`), 4 2023 quarterly fundamental records (`filingDate`, `acceptedDate`, revenue, net income), 1 security-reference row, and 138 FX rows (`2024-01-02`). Re-running the guide's JSON request via `tm-indexone ... --offline` without credentials returned the identical 4-row Parquet object and SHA-256 digests. |
+| Full workspace checks (`2026-11-06`) | `uv run --no-sync pytest -q` passed **445 tests** in `49.46s` (3 live Tushare tests skipped without `TUSHARE_TOKEN`), alongside Ruff lint/format checks, strict `mypy` (107 files), skill validation, `git diff --check`, all 180 local Markdown links/anchors, and two independent reviews of credential, parser, and cache boundaries. |
+| Clean-checkout publication audit (`2026-11-07`) | An isolated checkout of the staged configurable-rules and IndexOne changes installed cleanly from `uv.lock` and `Cargo.lock`, passing **442 Python tests** (6 tests skipped in the clean checkout without external Tushare caches, demo bundles, or tokens), **67 Rust workspace tests**, `cargo fmt --check`, `cargo clippy -D warnings`, Ruff, strict `mypy`, and `tm-indexone` CLI checks while excluding unrelated workspace research files. |

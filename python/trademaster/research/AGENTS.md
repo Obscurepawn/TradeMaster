@@ -1,29 +1,17 @@
-# Research pipeline
+# Research Pipeline Guide
 
-Use the existing provider interfaces to plan and resume bulk downloads, build
-point-in-time factor panels and labels, run diagnostics and produce reports.
+## Scope
 
-## Downloads
+`trademaster.research` (`tm-research-full-a`) plans and resumes bulk historical downloads across the full A-share universe, materializes dense point-in-time (PIT) market/fundamental panels and forward-return labels, computes factor diagnostics, and emits verifiable study reports.
 
-Keep download plans immutable and address them by content hash. Parquet holds
-provider responses. DuckDB tracks tasks and indexes objects. Verify coverage
-separately from API success. Track the historical universe, each endpoint's
-rules for absent rows, provider permissions and limits on historical data as
-distinct states.
+## Invariants
 
-For a completed task, match the request SHA against both the evidence record
-and the request metadata in Parquet. A worker can fetch once it holds the
-task's lease and can commit only while it still holds that lease. Builders read
-`completed_evidence_snapshot`. Keep the DuckDB task tables private.
+- **Content-addressed plans and leased downloads**: Address immutable download plans by SHA-256. Store provider responses in Parquet while using private DuckDB tables to coordinate task leases and object indexes; downstream panel builders consume only `completed_evidence_snapshot`. Verify dataset coverage independently of HTTP success, tracking historical universe membership, endpoint absent-row semantics, provider permission errors, and historical lookback limits as distinct states. Workers may fetch and commit only while holding an active task lease, and completed tasks must match the request SHA-256 against both the DuckDB evidence record and embedded Parquet metadata.
+- **PIT panel construction and evaluation hygiene**: Make date-only financial announcements observable no earlier than the next eligible trading session, and never backfill revisions lacking a publication timestamp onto the original announcement date. Retain explicit rows for missing observations and suspensions across dense session windows, and ensure every factor score or forward return flagged `is_valid=True` is finite. Require forward-return entry timestamps for close-derived features to fall strictly after that close, and record the factor definition, source objects, universe policy, label alignment, and evaluation parameters in every report manifest.
 
-## Panels and evaluation
+## Verification
 
-Date-only financial announcements become available in the next eligible
-session. If a revision has no publication time, never backfill its values to
-the original announcement date. Keep rows for missing observations and
-suspensions in dense-session windows. A factor value or forward return marked
-`is_valid` must be finite.
-
-For a feature computed at the close, the forward-return entry must be later
-than that close. Record the factor definition, source objects, universe policy,
-label alignment and configuration for each evaluation.
+```bash
+uv run pytest tests/test_full_a_research.py tests/test_full_a_panel.py \
+  tests/test_full_a_fundamental.py tests/test_research_tushare_client.py
+```

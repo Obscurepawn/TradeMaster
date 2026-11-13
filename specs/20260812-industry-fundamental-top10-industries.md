@@ -1,56 +1,31 @@
-# Ten-year experiment selecting one stock in each of ten industries
+# Two-Stage Industry Selection Study: Top Ten Industries, One Stock Each
 
-Status: complete
-Owner: Codex
-Updated: 2026-08-12
-Open questions: none
+**Status:** Completed | **Date:** 2026-08-12 | **Scope:** Market-wide industry mean filter (`top_industries_by_mean_score=10`) with within-industry stock selection (`trademaster.strategies.industry_fundamental_top5`) | **Builds-on:** [Industry Concentration Study: One Stock vs. Five Stocks per Industry](20260812-industry-fundamental-top1-experiment.md) | **Updated-by:** [M7: Managed Factor Registry, Materialization Store, and Strategy Refactor](20260823-m7-factor-management-strategy-refactor.md), [M9: Twenty-Year All-A-Share Factor Research Pipeline and Quality Audit](20260823-m9-full-a-20y-factor-evaluation-quality.md)
 
-## Experiment and ranking rules
+## Motivation and Two-Stage Ranking Design
 
-Apply an industry filter to the existing ten-year Tushare backtest of one stock per industry. At each of the 20 semiannual rebalances, select the ten industries with the highest average fundamental scores. Within each industry, select the stock with the highest original industry-neutral score, then equally weight all selected stocks.
+This experiment adds an optional top-down industry filter (`top_industries_by_mean_score=10`, defaulting to `None` to preserve the all-industry baseline) to the ten-year `top_per_industry=1` CSI 300 strategy:
 
-To select a stock, winsorize and standardize the nine indicators within its industry, then apply the original Top1 weights. Those scores average near zero within each industry, so they cannot distinguish industries.
+1. **Cross-market industry ranking:** Because within-industry z-scores average near zero inside every industry, cross-industry comparison recomputes the nine fundamental indicators' winsorized (5%/95%) z-scores across *all eligible stocks market-wide* using the same indicator weights. Each industry's score is the equal-weighted mean of its eligible members' market-wide composite scores, sorted deterministically by `(-industry_mean_score, industry_id)` to retain the top ten industries.
+2. **Within-industry stock selection:** Inside each of the ten selected industries, the selector chooses the single stock with the highest *within-industry* composite score and assigns exact equal target weights (`0.1` per stock, summing to `1.00000000`).
 
-To rank an industry, recompute the nine indicators' standardized scores across *all eligible stocks*, using the same winsorization and weights. Average the resulting fundamental scores for its members. Each stock counts once, regardless of market capitalization.
+All data inputs, point-in-time rules, `CNY 500,000` initial capital, transaction costs, slippage, and Rust execution constraints match the all-industry Top-1 baseline. *(Note: [M7](20260823-m7-factor-management-strategy-refactor.md) F-12 subsequently corrected signal-ID ordering in small-account board-lot allocation, changing the ten-industry strategy's corrected total return to `47.16%`, and [M9](20260823-m9-full-a-20y-factor-evaluation-quality.md) documented the historical `SW2021` interval gaps affecting both runs.)*
 
-Sort by `(-industry_mean_score, industry_id)` and take the first ten. The usual target portfolio is ten equally weighted stocks. Keep the all-industry Top1 baseline's data, PIT rules, costs, slippage, Rust trading constraints, starting cash of 500,000 CNY and reporting conventions.
+## Results and Verification Record
 
-## Implementation and acceptance
-
-| Task | Owner | Status | Evidence |
-|---|---|---|---|
-| Define the public industry-filter option | Codex | complete | Strategy and configuration regression checks |
-| Connect the CLI, run identity, outputs and report | Codex | complete | Configuration, selections, summary and report |
-| Run ten years of real data and replay | Codex | complete | Zero provider calls and four matching hashes |
-| Compare with all-industry Top1 and run final checks | Codex | complete | Comparison, test suites and passing independent review |
-
-- [x] Validate `top_industries_by_mean_score=10`. The default `None` preserves the baseline.
-- [x] Tests confirm the market-wide means, deterministic ordering and exact equal weights.
-- [x] All 20 real selections contain ten industries, one stock per industry and an exact weight sum of one.
-- [x] Both runs use the cache without a provider call and reproduce the key hashes.
-- [x] Produce HTML, Markdown, JSON and the all-industry Top1 comparison.
-- [x] Pass the Python and Rust checks and one independent review of the specified scope.
-
-## Results and verification
-
-| Strategy | Total return | Annualized return | Volatility | Sharpe | Maximum drawdown |
+| Strategy Variant | Total Return | Annualized Return | Volatility | Sharpe | Max Drawdown |
 |---|---:|---:|---:|---:|---:|
-| Ten industries, Top1 | 54.16% | 4.50% | 17.92% | 0.335 | -40.63% |
-| All industries, Top1 | 108.39% | 7.76% | 16.69% | 0.531 | -27.64% |
+| Top 10 industries, 1 stock each | 54.16% | 4.50% | 17.92% | 0.335 | -40.63% |
+| All industries, 1 stock each | 108.39% | 7.76% | 16.69% | 0.531 | -27.64% |
 
-The industry filter reduced return and increased drawdown in this experiment. Across 20 dates and 200 selections, the audit found ten industries per date, one stock per industry, industry ranks 1–10, a weight of 0.1 per stock and an exact weight sum of one. There were zero violations.
+Concentrating the portfolio into ten industries reduced return and deepened maximum drawdown relative to the diversified all-industry Top-1 portfolio.
 
+- **Selection and replay audit:** Across all 20 rebalance dates (200 total selections), automated checks verified exactly 10 industries per date, 1 stock per industry, industry ranks `1..10`, target weights of `0.1`, and exact weight sums of `1.0` with zero violations. Both the initial run and clean replay made `0` provider calls and produced matching SHA-256 digests across request (`a076c7d6...abbe4`), result (`b9e7b6dd...c0f56`), report input (`0db6376b...dbe5d`), and standalone HTML (`0cbaf2fd...3f1ae`).
+- **Repository checks & independent review:** Python passed 144 tests alongside Ruff lint/format checks on all modified files (leaving 30 pre-existing untouched files unchanged), strict `mypy`, `cargo fmt --check`, `cargo clippy`, and Rust workspace tests. An independent review reproduced the market-wide industry means, selections, artifact digests, and performance comparison with zero Critical or High findings.
 
-The first real run and clean replay both made zero provider calls. Their request `a076c7d6…abbe4`, result `b9e7b6dd…c0f56`, report input `0db6376b…dbe5d` and HTML `0cbaf2fd…3f1ae` hashes matched.
+## Changed Files
 
-Python reported `144 passed`. Ruff check, mypy, Cargo fmt, Clippy and Rust workspace tests passed. The four changed Python files passed Ruff's format check. A separate repository-wide format check found 30 files with pre-existing formatting differences. They were left untouched.
-
-The independent review passed with no Critical or High issues in scope. It reproduced the scores, selections, artifact hashes, performance table and industry concentration.
-
-## Changed files
-
-- `specs/INDEX.md`
-- `specs/20260812-industry-fundamental-top10-industries.md`
+- `specs/INDEX.md`, `specs/20260812-industry-fundamental-top10-industries.md`
 - `python/trademaster/strategies/industry_fundamental_top5/__init__.py`
 - `python/trademaster/strategies/industry_fundamental_top5/real.py`
 - `python/trademaster/strategies/industry_fundamental_top5/__main__.py`

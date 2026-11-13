@@ -1,6 +1,6 @@
 # Industry fundamental strategy · legacy module
 
-Existing callers can keep importing `trademaster.strategies.industry_fundamental_top5`. For new scripts, use the [public strategy package](../industry_fundamental/README.md). Both names run the same code. Set `--top-per-industry` to change the number of stocks selected per industry.
+`trademaster.strategies.industry_fundamental_top5` is the backward-compatible import alias for the [public strategy package](../industry_fundamental/README.md)—executing the exact same semiannual CSI 300 factor-selection code while preserving legacy symbol names for existing callers. New scripts should import `trademaster.strategies.industry_fundamental` and pass `--top-per-industry` to configure industry concentration.
 
 | Legacy name | Public name in `trademaster.strategies.industry_fundamental` |
 | --- | --- |
@@ -9,18 +9,20 @@ Existing callers can keep importing `trademaster.strategies.industry_fundamental
 
 ## Reproduce a selection or check a historical run
 
-The [offline selection example](../industry_fundamental/README.md#try-the-selection-on-a-small-portfolio) checks eight targets of 12.5% each. The [ten-year Top1 command](../industry_fundamental/README.md#check-coverage-for-the-ten-year-top1-run) checks historical membership in the project cache. For `000009.SZ` on 2016-11-07 the historical interval is missing, so the command stops before it can produce a report.
+The [offline selection fixture](../industry_fundamental/README.md#try-the-selection-on-a-small-portfolio) verifies eight equal-weighted (`12.5%`) picks across two sample industries, while the [ten-year Top1 coverage probe](../industry_fundamental/README.md#check-coverage-for-the-ten-year-top1-run) audits point-in-time (PIT) SW2021 membership in the local cache—halting before report generation when `000009.SZ` lacks a valid membership interval on `2016-11-07`.
 
-At each rebalance the runner saves the complete candidate snapshot, materializes nine atomic factors and two composites, then records the stocks it selects. `fundamental.composite.industry_relative@1` ranks stocks within an industry. `fundamental.composite.global@1` supplies the scores averaged to rank industries. A complete 20-rebalance run produces 220 factor materializations. The v3 bundle links these records to the Rust result and reports. With complete cached requests, the CLI reports `provider_calls` of zero. [Factor management guide](../../../../docs/factor-management.md)
+On each semiannual rebalance date, the runner snapshots the active CSI 300 candidate universe, materializes nine atomic fundamental factors plus two composites (`fundamental.composite.industry_relative@1` for intra-industry stock selection and `fundamental.composite.global@1` for cross-industry mean scoring), and logs selected target weights. Across a full 20-rebalance decade, the `v3` audit bundle links all 220 factor materializations directly to the Rust execution result and tear sheets, reporting `provider_calls` of zero whenever local Parquet evidence is complete. [Factor management guide](../../../../docs/factor-management.md)
 
 ## Historical data and accounting
 
+Because this strategy predates the raw-price daily snapshot ledger, its legacy event-runner workflow applies several research approximations that affect trade sizing and historical interpretation:
+
 | What affects the result | How this runner handles it |
 | --- | --- |
-| Publication timing | Selection uses original statements (`update_flag=0`) announced before the signal date. |
-| Industry membership | The default looks up each candidate’s SW2021 industry on the signal date using `in_date` and `out_date` from `index_member_all`. A gap stops selection. The `static_latest_experiment` sensitivity test can use a later classification to fill that gap. It records a separate strategy ID. |
-| Execution evidence | For a stock with a daily bar, the runner uses positive volume as its tradability test and requires the stock’s price limits on execution days. If the bar is missing and a prior close exists, it carries that price forward and records the stock as suspended. The evidence records the missing bar. If there is no prior close, it skips the stock for that day. |
-| Corporate actions | Orders, lots and commissions use prices adjusted by `adj_factor` and normalized to the end of the period. The ledger has no separate postings for cash dividends or splits, so share counts, cash and minimum commissions are approximate. |
-| Blocked exits | The strategy schedules exit attempts for up to 20 trading sessions and revisits remaining holdings on later rebalances. The report separates residual positions and cash from target weights. |
+| Publication timing | Selection observes only initial financial disclosures (`update_flag=0`) announced strictly before the signal date. |
+| Industry membership | By default, each candidate's SW2021 group on the signal date must match an `in_date`/`out_date` interval in `index_member_all`, halting immediately on any gap; the diagnostic `static_latest_experiment` mode backfills gaps with later classifications under a separate strategy ID. |
+| Execution evidence | When a daily bar exists, positive volume establishes tradability alongside daily price limits on execution dates; when a bar is missing after a prior close, the runner carries that close forward and marks the stock suspended (recording the missing bar in evidence), or skips the stock if no prior close exists. |
+| Corporate actions | Orders, whole-lot quantities, and commissions are sized and booked on `adj_factor`-adjusted prices normalized to period end rather than raw quotes with separate cash-dividend or split postings—making share counts, cash balances, and minimum-commission thresholds approximate. |
+| Blocked exits | Positions dropped from the target portfolio retry zero-weight exit orders across up to 20 trading sessions and are revisited on subsequent rebalances, with residual illiquid holdings separated from target weights in the tear sheet. |
 
-An August 2026 audit found that earlier Top1 and Top10-industry reports applied current industry membership to earlier dates. The project withdrew those performance conclusions and retained the reports to document the classification error. [Audit record](../../../../specs/20260823-m9-full-a-20y-factor-evaluation-quality.md)
+During the August 2026 M9 audit, reviewers found that earlier Top1 and Top10-industry runs had backfilled missing historical SW2021 intervals with contemporary industry classifications; those performance conclusions were formally withdrawn while retaining the historical bundles as audit evidence. [Audit record](../../../../specs/20260823-m9-full-a-20y-factor-evaluation-quality.md)

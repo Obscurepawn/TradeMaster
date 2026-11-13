@@ -1,13 +1,16 @@
-# Rust Runner Guide
+# tm-runner Guide
 
-This library reads saved event and snapshot requests for the Python extension.
-Parse canonical event JSON, construct checked domain values, run the event loop
-and encode the audit records. For a snapshot request, resolve its market path
-relative to the request file and pass the verified data to the daily engine.
-The engine owns sizing, execution, fees, settlement and accounting.
+## Scope
 
-For event requests, validate the field set, canonical scaled integers, UTC
-timestamps, identifiers and calendar before entering the engine. Snapshot
-requests carry ISO session dates and integer amounts. Verify the market hash
-and check the manifest when the request carries a snapshot ID. Keep
-credentials and host paths out of run results.
+`tm-runner` decodes saved canonical event and daily snapshot requests, verifies referenced market artifacts, drives `tm-engine`, and serializes deterministic JSON outputs for `tm-python` and `tm-replay`. Order sizing, validation, execution, fees, settlement, and ledger accounting belong exclusively in `tm-engine`.
+
+## Invariants
+
+- **Strict event-request decoding**: Validate exact field sets, canonical fixed-point scaled integers, UTC timestamps, unique identifiers, optional price-limit pairs, and trading calendars before constructing `tm-core` domain types or entering `EventLoop`.
+- **Snapshot provenance and relative resolution**: Decode ISO-8601 session dates and exact integer amounts, resolve the market JSON path relative to the saved request file's directory, verify the market SHA-256 hash, and validate the snapshot manifest whenever the request carries a `snapshot_id`.
+- **Portable, secret-free results**: Exclude credentials and machine-specific host paths from serialized run outputs so replays remain portable and byte-reproducible across environments.
+
+## Verification
+
+- Rust wire and replay suites ([`tests/wire.rs`](tests/wire.rs), [`tests/snapshot_replay.rs`](tests/snapshot_replay.rs)): `cargo test --locked -p tm-runner`
+- End-to-end CLI and Python extension replay ([`tests/test_replay.py`](../../tests/test_replay.py)): `uv run pytest tests/test_replay.py`

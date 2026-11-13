@@ -1,27 +1,19 @@
-# Legacy industry fundamental strategy
+# Legacy Industry Fundamental Strategy Guide
 
-Direct new callers to `trademaster.strategies.industry_fundamental`. Top1 and
-Top5 are configuration settings within one package and type. This legacy package builds
-the historical universe, makes semiannual selections, sets target weights and
-runs reports. Use managed definitions from `trademaster.factors` for all
-fundamental formulas and transforms. Rust handles accounting.
+## Scope
 
-Each formal selection records the complete candidate input snapshot, factor
-definitions and materializations, strategy-definition hash and sparse selection
-object. Rank by score and break ties by instrument ID. In reports, distinguish
-the target portfolio from actual holdings after lot rounding and show the
-remaining cash.
+`trademaster.strategies.industry_fundamental_top5` hosts the legacy implementation modules retained for backward compatibility; direct all new callers and documentation to [`trademaster.strategies.industry_fundamental`](../industry_fundamental/AGENTS.md), where `Top1`, `Top5`, and top-industry variants are configuration options of one strategy type.
 
-For long-horizon reports, use weekly valuations and 52 periods per year.
-Determine each candidate's SW2021 industry on the signal date from its
-`in_date/out_date` interval. Stop a formal run if a candidate has no matching
-membership. The `static_latest_experiment` variant has its own strategy identity
-and uses the latest classification. Exclude it from comparisons of formal
-historical-industry backtests and identify it clearly in report titles.
+## Invariants
 
-This event runner carries a missing daily bar forward at the last close and
-records a suspension inferred from the missing bar. Distinguish that inference
-from provider-confirmed trading status when documenting execution evidence.
-Record the use of end-normalized adjusted prices in each report and summary.
-These prices determine lot counts and minimum fees. The ledger has no separate
-cash-dividend or split posting for this strategy.
+- **Factor delegation and selection provenance**: Compute all fundamental formulas and cross-sectional transforms via managed definitions in [`trademaster.factors`](../../factors/AGENTS.md), while Rust handles execution and accounting. Persist the complete candidate input snapshot, factor definitions and materializations, strategy-definition hash, and sparse selection artifact for every formal rebalance. Rank candidates by score with `instrument_id` tie-breaking, and distinguish target portfolio weights from post-lot-rounding holdings and residual cash in reports.
+- **SW2021 historical membership and valuation cadence**: Use weekly valuation dates (52 periods/year) for long-horizon reports. Resolve each candidate's SW2021 industry on the signal date from its `[in_date, out_date]` interval and abort any formal run when a candidate lacks historical membership. Keep `static_latest_experiment` under a distinct strategy identity, label its use of latest industry classifications in report titles, and exclude it from formal PIT industry comparisons.
+- **Missing-bar inference and adjusted-price disclosure**: When this event workflow carries a missing daily bar forward at the prior close and infers a suspension from bar absence, distinguish that inference from provider-confirmed trading status in reports and documentation. Explicitly disclose in every summary and report that end-normalized adjusted prices govern lot counts and minimum-commission thresholds, with no separate cash-dividend or split postings in the ledger.
+
+## Verification
+
+```bash
+uv run pytest tests/test_industry_fundamental_top5.py \
+  tests/test_fundamental_managed_factors.py \
+  tests/test_fundamental_strategy_data_cache.py
+```

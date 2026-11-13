@@ -1,50 +1,46 @@
-# M2 factor and signal layer
+# M2: Factor Computation and Signal Generation
 
-Status: completed
-Owner: Codex
+**Status:** Completed | **Date:** 2026-08-11 | **Scope:** Point-in-time factor definitions, cross-sectional transforms, and T+1 signal generators (`trademaster.factors`, `trademaster.signals`) | **Updated-by:** [M7: Managed Factor Registry, Materialization Store, and Strategy Refactor](20260823-m7-factor-management-strategy-refactor.md)
 
-## Scope
+## Motivation and Scope
 
-M2 builds factor registration and computation on M1 point-in-time (PIT) data snapshots. It supports two uses. At each rebalance, a cross-sectional strategy ranks the market, selects the top N instruments, and emits target weights. A stock or ETF strategy uses one instrument's time series to identify buy and sell signals and set its target quantity. The M3 Rust engine handles cash, positions, T+1 lots, suspensions, and price limits.
+Milestone M2 builds point-in-time (PIT) factor computation and signal generation on top of M1 **data snapshots**. It supports two strategy patterns:
 
-## Public interfaces
+1. **Cross-sectional selection:** At each scheduled rebalance, rank the eligible universe by factor score, select the top `N` instruments, and emit equal or explicit portfolio target weights.
+2. **Single-instrument timing:** Evaluate one stock or ETF's historical series for threshold crossings and emit target-quantity buy or sell signals.
 
-- `FactorDefinition` specifies a stable `factor_id/version`, the datasets and fields it reads, the number of lookback sessions, and the meaning of the result.
-- `FactorRegistry` registers definitions and looks them up by ID and version. It rejects duplicate definitions and unknown dependencies.
-- `FactorExecutor.compute()` accepts an Arrow table that identifies its data snapshot. Rows must describe events that had occurred and data that was available by the specified cutoffs. The output identifies the same snapshot and contains `instrument_id,event_time,factor_id,factor_version,value,is_valid`.
-- `CrossSectionalSignalConfig` specifies top N, sort direction, minimum valid sample, equal or explicit weights, and the next eligible execution time.
-- `SingleAssetSignalConfig` specifies the instrument, buy and sell thresholds or rules, target quantity, and next eligible execution time.
-- Both generators emit rows with `signal_id,strategy_id,instrument_id,signal_time,eligible_execution_time,intent_type,value,reason,snapshot_id`. A signal based on today's close first becomes eligible at the next trading session (T+1), so `eligible_execution_time > signal_time`.
+Order validation, cash allocation, T+1 lot unlocking, suspensions, and daily price limits are delegated to the Rust execution kernel ([M3](20260811-m3-rust-rules-ledger.md)–[M4](20260811-m4-unified-event-runtime.md)).
 
-## Factors and generators
+## Design and Public Interfaces
 
-- `MomentumFactor` computes N-session momentum from adjusted prices ordered by instrument and event time. It marks insufficient history invalid and keeps each instrument's window separate.
-- `ValueFactor` uses PIT `daily_basic` fields `float_market_value` or `total_market_value` to produce a value suitable for ranking.
-- `CompositeFactor` supports winsorization, z-scores, component directions and weights, and an explicit policy for missing values.
-- `TopNTargetWeightGenerator` ranks a sufficient sample of valid values, breaks ties by `instrument_id`, and assigns equal weights that sum to exactly 1.00000000.
-- `ThresholdQuantitySignalGenerator` tests a single instrument for upward or downward crossings and emits a quantity intent. It can only read observations available at decision time.
+### Factor Layer (`trademaster.factors`)
 
-## Test and implementation sequence
+- `FactorDefinition` declares a stable `(factor_id, version)` pair, required canonical datasets and fields, session lookback window, and directional semantics.
+- `FactorRegistry` indexes definitions by ID and version while rejecting duplicate registrations and unresolved upstream dependencies.
+- `FactorExecutor.compute()` consumes an Arrow table bound to an M1 data snapshot whose rows satisfy the snapshot's `as_of` cutoff (`event_time` and `known_at <= as_of`). It emits an Arrow table preserving the same `snapshot_id` with columns `instrument_id, event_time, factor_id, factor_version, value, is_valid`.
+- Built-in v1 factors:
+  - `MomentumFactor`: computes `N`-session adjusted-price momentum ordered strictly within each instrument's history, marking warm-up rows (`< N` sessions) as `is_valid=False`.
+  - `ValueFactor`: derives rankable valuation scores from PIT `daily_basic` (`float_market_value` or `total_market_value`).
+  - `CompositeFactor` (`CompositeComponent`): combines multiple factors via configurable winsorization bounds, cross-sectional z-scores, component signs/weights, and explicit missing-value rules.
 
-1. Red. Test registry behavior, the fixed Arrow schema, snapshot provenance, cutoffs, and duplicate IDs.
-2. Green. Implement the registry, executor, and schema validator.
-3. Red. Hand-calculate momentum for three instruments. Cover short windows, sort order, ties, top-N weights, and T+1 timing.
-4. Green. Implement Momentum, Value, Composite, and cross-sectional signals.
-5. Red. Test a threshold series, ETF identity, duplicate times, future rows, and quantity intents.
-6. Green. Implement the single-instrument signal generator.
-7. Generate both kinds of signals from a real M1 Parquet/DuckDB snapshot and conduct one independent review.
+### Signal Layer (`trademaster.signals`)
 
-## Acceptance and results
+- `CrossSectionalSignalConfig` configures `top_n`, sort direction, minimum valid cross-sectional sample size, equal or explicit weights, and next eligible execution timestamp.
+- `SingleAssetSignalConfig` configures the target instrument, buy/sell crossing thresholds, target share quantity, and next eligible execution timestamp.
+- Signal generators emit rows matching the shared `signals` artifact schema: `signal_id, strategy_id, instrument_id, signal_time, eligible_execution_time, intent_type, value, reason, snapshot_id`.
+- **Causality rule:** Any signal computed from session `T` closing prices is eligible no earlier than the next trading session (`T+1`), enforcing `eligible_execution_time > signal_time`.
+- Built-in v1 generators:
+  - `TopNTargetWeightGenerator`: ranks valid scores when the cross-section meets the minimum sample threshold, breaks ties deterministically by ascending `instrument_id`, and assigns exact `Decimal` equal weights summing to `1.00000000`.
+  - `ThresholdQuantitySignalGenerator`: detects upward or downward threshold crossings using only observations available at `signal_time` and emits integer quantity intents.
 
-To pass, the computed values and weights had to match the hand calculations, output tables had to retain their schema and identify their input snapshot, and signals based on closing data had to wait until the next session. Integration tests for stock selection and single-instrument/ETF signals both used Arrow tables from M1 data snapshots. The required checks included pytest, Ruff, strict mypy, and wheel/sdist builds. The broader system review was scheduled after the M6 end-to-end run.
+## Verification and Regression Record
 
-M1 was complete when these tests ran. The M2 integration cases used real Parquet files, the DuckDB catalog, and a PIT snapshot to generate cross-sectional top-N and ETF buy signals. The test provider rejected all fetches, verifying that the local M1 objects supplied the data.
+Factor values and portfolio weights were verified against hand-calculated three-instrument reference fixtures before running integration tests over real M1 Parquet/DuckDB data snapshots. In the snapshot integration suite, the test data provider rejected all network calls to verify that both stock top-`N` target weights and ETF threshold signals were computed strictly from local M1 snapshot objects.
 
-| Stage | Evidence |
+| Verification Stage | Scope and Outcome |
 |---|---|
-| Red 1 | Collection of `tests/test_factor_interfaces.py` failed because `trademaster.factors` did not exist. The implementation added the registry, executor, schema, provenance, and cutoff checks. |
-| Red 2 | `tests/test_momentum_and_signals.py` could not import `MomentumFactor`. The fix added per-instrument session lags, stable top-N selection, exact Decimal equal weights, and execution at the next eligible time. |
-| Red 3 | `tests/test_value_composite_threshold.py` could not import `CompositeComponent`. The implementation added the market-value factor, cross-sectional z-score composite, and single-instrument threshold crossings. |
-| Initial Green | 11 tests passed across four focused files. Ruff and strict mypy passed. With local credentials, 118 Python tests passed, 0 skipped, including the real Tushare `trade_cal` smoke test. The wheel and sdist contained factors, signals, `py.typed`, and the shared schema. |
-| Independent review | 0 Critical and 7 High findings in the main interfaces and workflow. The team addressed them together without opening a second review. The new and revised regression tests initially gave 10 failed and 2 passed. They covered execution timing, artifact enums, Protocol conformance, stale crossings, factor identity, `known_at`, and dependency validation. |
-| Final Green | 16 focused tests passed. With local credentials, 122 Python tests passed, 0 skipped. Ruff, strict mypy (27 source files), wheel/sdist builds, and `git diff --check` passed. The repository contained 0 exact matches for the credential. |
+| Factor contracts & provenance (`tests/test_factor_interfaces.py`) | Verified `FactorRegistry` duplicate/dependency checks, fixed Arrow output schema, `snapshot_id` propagation, and `known_at` / `event_time` cutoff enforcement. |
+| Momentum & cross-sectional weights (`tests/test_momentum_and_signals.py`) | Verified per-instrument lookback isolation, deterministic `instrument_id` tie-breaking, exact `Decimal` weight sums (`1.00000000`), and `eligible_execution_time > signal_time`. |
+| Value, composite & threshold signals (`tests/test_value_composite_threshold.py`) | Verified `daily_basic` market-value ranking, winsorized z-score composites, ETF symbol handling, duplicate/future row rejection, and upward/downward threshold crossings (11 focused / 118 total tests passing initially). |
+| Independent review & regression fixes | Resolved 7 High findings (0 Critical) in a single pass with 10 new failing-then-passing regression cases covering execution-time bounds, shared artifact enum vocabularies, `Protocol` structural conformance, stale threshold crossings, factor version identity, `known_at` validation, and dependency graph checks. |
+| Final milestone checks | 16 focused M2 tests and 122 total Python tests passed (0 skipped, including live Tushare `trade_cal` smoke test); Ruff, strict `mypy` (27 source files), wheel/sdist packaging (`factors`, `signals`, `py.typed`, shared schemas), `git diff --check`, and credential scans (0 matches) all passed. |

@@ -1,26 +1,20 @@
-# Python layer
+# Python Package Guide
 
-Python handles provider adapters, point-in-time (PIT) queries, factors, signals,
-strategy adapters, CLI commands and reports. Rust maintains cash and positions.
-Research and factor code exchange Arrow tables. The daily snapshot SDK writes
-feature Parquet and a fixed-point JSON market file. The native extension opens the verified market and runs the Rust ledger. At
-each scheduled close the Python strategy reads the account and returns weights. Access
-providers through typed protocols. Tests use real DuckDB and Parquet and fake
-providers that implement the same protocols.
+## Scope
 
-Store factor values and evaluation tables in immutable Parquet files. DuckDB
-indexes them for discovery. Keep forward-return labels out of signals. Each
-label records its entry and exit times, alignment rule and source snapshot.
+`python/trademaster` implements provider adapters, point-in-time (PIT) storage and snapshot publication ([`data`](trademaster/data/AGENTS.md)), full-universe research orchestration ([`research`](trademaster/research/AGENTS.md)), managed factor definitions and evaluation ([`factors`](trademaster/factors/AGENTS.md)), runtime signal generation ([`signals`](trademaster/signals/AGENTS.md)), portfolio selection ([`strategies`](trademaster/strategies/AGENTS.md)), the daily snapshot SDK ([`backtest`](trademaster/backtest)), verifiable event bundles ([`e2e`](trademaster/e2e/AGENTS.md)), and offline analytics ([`reporting`](trademaster/reporting/AGENTS.md)). Cash, positions, order matching, and settlement live exclusively in Rust (`trademaster._native`).
 
-Use `trademaster.research` for twenty-year studies of all A shares. Its download
-plan tracks tasks for the historical universe and the evidence needed to resume
-downloads. Compute and evaluate factors out of core with DuckDB and Arrow.
-Build the panel for the full historical universe before any strategy selection.
-The CLI still uses `StrategyDataCache` for cache-first provider access. Put new
-shared data interfaces in `trademaster.data` and research interfaces in the
-research package.
+## Invariants
 
-For each completed task, verify that its request matches the evidence record and
-Parquet metadata. Give builders a typed, immutable snapshot of completed tasks.
-Treat date-only financial announcements as available in the next eligible
-session. A revision with no publication time cannot change earlier observations.
+- **Python-to-Rust boundary**: The daily snapshot SDK publishes feature Parquet files and a fixed-point `market.json`; `trademaster._native` opens the verified market in Rust and calls Python's `on_close(day)` at scheduled closes with closing account balances and intervening fills to collect target weights. Research, factor, and signal pipelines exchange Arrow tables without holding mutable account state.
+- **Typed protocols and immutable storage**: Access external data providers strictly through typed `Protocol` interfaces so offline tests can substitute deterministic fakes backed by real DuckDB catalogs and Parquet files. Persist factor materializations and evaluation outputs in immutable Parquet indexed by DuckDB.
+- **Point-in-time and label hygiene**: Keep forward-return labels isolated from factor and signal contexts; every label must record its entry and exit timestamps, alignment rule, and source data snapshot. Treat date-only financial announcements as observable no earlier than the next eligible session, and never allow revisions lacking a publication timestamp to retroactively alter earlier PIT views.
+- **Module placement and task evidence**: Place shared provider/storage contracts in `trademaster.data` and twenty-year full-A panel workflows in `trademaster.research` (CLI strategy workflows may continue using `StrategyDataCache` for cache-first access). Assemble full-universe panels prior to any strategy filtering, verify that completed download tasks match both DuckDB evidence records and embedded Parquet request metadata, and pass downstream builders a typed, immutable snapshot of completed evidence.
+
+## Verification
+
+```bash
+uv run ruff check python tests
+uv run mypy --strict python tests
+uv run pytest -q
+```

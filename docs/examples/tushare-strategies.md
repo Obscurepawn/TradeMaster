@@ -1,6 +1,6 @@
 # Three strategies on the same Tushare history
 
-Three strategies start with CNY 100,000 each and use the same 98 TuShare trading sessions from January 2 through May 31, 2024. Each makes decisions at the close. The results below use the **event runner**, which sizes target weights at an eligible open. The **snapshot runner** can replay the same decisions, sizing orders from the previous close and reserving cash before the open. [Compare the two execution paths](rebalance-comparison.md)
+How do you acquire a verified Tushare Pro market cache once and evaluate multiple cross-sectional and single-stock strategies against it offline? Starting with CNY 100,000 per account across 98 Tushare trading sessions (January 2 through May 31, 2024), this walkthrough runs three close-time strategies through both execution paths: the **event runner** (which sizes target weights at an eligible open and writes standalone HTML audit bundles) and the **snapshot runner** (which finalizes quantities from prior closes, reserves unallocated cash upfront, and writes portable requests against a shared data snapshot). [Compare the two execution paths](rebalance-comparison.md)
 
 | Strategy | Decision |
 |---|---|
@@ -8,17 +8,17 @@ Three strategies start with CNY 100,000 each and use the same 98 TuShare trading
 | Single-stock moving average | For China Merchants Bank (`600036.SH`), enter when the 5-session simple moving average crosses above the 20-session average. Exit on a downward cross. |
 | Single-stock MACD | For the same stock, subtract the 26-session exponential moving average from the 12-session average. Enter when this line crosses above its 9-session signal average. Exit when it crosses below. Seed the price averages with 12 or 26 closes and the signal average with the first nine MACD values. |
 
-The fixed candidate list is `000001.SZ`, `000725.SZ`, `000977.SZ`, `600036.SH` and `600050.SH`. Signals use the close multiplied by that day's adjustment factor. Fills and valuations use the original prices. The window includes the initial indicator warm-up, during which the account stays in cash. These examples use the stock fees configured in TradeMaster and zero slippage.
+All three strategies observe the candidate universe (`000001.SZ`, `000725.SZ`, `000977.SZ`, `600036.SH`, and `600050.SH`) as of each trading day's exchange close, with orders first eligible at the next session's open. Indicators are computed on back-adjusted closes (`close × adj_factor`), whereas order sizing, fills, and daily mark-to-market valuation use raw unadjusted prices under TradeMaster's default A-share stock fees and zero slippage. Each account stays in cash during its initial indicator warm-up window.
 
 ## Run the examples
 
-Run the commands from the repository root in the same shell. Install the package and its Rust extension first.
+Run all commands from the repository root in a single shell after installing the Python package and native Rust extension:
 
 ```bash
 uv sync --locked --extra dev
 ```
 
-**New cache.** Set `TUSHARE_TOKEN` in your shell environment. Planning fetches stock listings and the exchange calendar. The download fetches market and trading-status data by session across the market, then the demo selects its five stocks locally. Include June 3 so the calendar has the next eligible open after the final May 31 decision.
+**Build a new cache.** Export `TUSHARE_TOKEN` in your shell environment. `plan` fetches stock listings and the exchange calendar, and `download` acquires session-by-session market bars and trading-status tables across the market so the demo can slice its five stocks locally. Include `2024-06-03` so the calendar records the first eligible open following the final May 31 close:
 
 ```bash
 DATA_ROOT=data/research/demo
@@ -32,11 +32,11 @@ uv run tm-research-full-a --data-root "$DATA_ROOT" download \
   --plan-sha256 "$PLAN" --phase market --phase status
 ```
 
-If the download is interrupted, rerun the download command with the same plan ID. Other research phases can stay pending. Each demo runner checks its required inputs before executing.
+If an interruption stops `download`, re-run the same command with `$PLAN` to resume; unrelated research phases (`statement`, `industry`, `benchmark`) can remain pending, as each runner validates only the inputs it consumes.
 
-**Existing cache.** Skip planning and downloading if you already have the required sessions and market and status records. Set `DATA_ROOT` to that cache directory and `PLAN` to its saved plan ID. For the original twenty-year cache used for the published results, the values are `data/research/full-a-20y` and `6ce15c56c759a79f635af3ac489bbeb624620670e4f4cd323eb80935ed17a633`.
+**Reuse an existing cache.** If you already have a local cache covering those sessions, market bars, and status tables, skip planning and set `DATA_ROOT` and `PLAN` directly (for the 20-year research cache behind the published figures, use `DATA_ROOT=data/research/full-a-20y` and `PLAN=6ce15c56c759a79f635af3ac489bbeb624620670e4f4cd323eb80935ed17a633`).
 
-**Run both engines offline.** Keep the same `DATA_ROOT` and `PLAN` for both commands. Use separate output directories for the snapshot and the HTML reports. Choose fresh output directories when switching input data.
+**Execute both engines offline.** Run the snapshot and event paths against the same `DATA_ROOT` and `PLAN`, writing to separate fresh output directories:
 
 ```bash
 uv run python -m trademaster.e2e.demo_strategies --engine snapshot \
@@ -45,14 +45,14 @@ uv run python -m trademaster.e2e.demo_strategies --engine events \
   --data-root "$DATA_ROOT" --plan "$PLAN" --output artifacts/demo-strategies
 ```
 
-The loader reads the plan's trading calendar and verifies the saved TuShare daily bars, adjustment factors, price limits and suspension records. It stops on gaps in the selected stocks or a change in adjustment factor within the window. A split or dividend would require the corresponding adjustment to holdings or cash.
+Before executing, the loader verifies the plan's trading calendar alongside the cached Tushare daily bars, adjustment factors, price limits, and suspension records—halting on any missing bar among the five candidates or any intra-window change in `adj_factor` (since splits or cash dividends within the window would require explicit lot or cash-receivable adjustments).
 
 | Output directory | What to inspect |
 |---|---|
-| `artifacts/demo-strategies/<strategy>/` | The event runner saves the decisions, Rust request and result, and `report.html` with equity, costs and a benchmark. It replays the saved request and verifies the report before writing the three-strategy summary. |
-| `artifacts/demo-snapshot/<strategy>/` | The snapshot runner saves `request.json` and `result.json` for each strategy. The shared data snapshot is in `artifacts/demo-snapshot/snapshot/`. Replay a saved strategy with `uv run tm-replay artifacts/demo-snapshot/macd/request.json`. |
+| `artifacts/demo-strategies/<strategy>/` | Event-runner decisions, Rust request and result, and standalone `report.html` (equity curve, costs, and benchmark), verified via request replay before `summary.json` is written. |
+| `artifacts/demo-snapshot/<strategy>/` | Portable `request.json` and `result.json` referencing the shared data snapshot in `artifacts/demo-snapshot/snapshot/` (replayable via `uv run tm-replay artifacts/demo-snapshot/macd/request.json`). |
 
-Open `artifacts/demo-strategies/cross-sectional-momentum/report.html` in a browser for the weekly momentum report. Each engine also writes a `summary.json` in its output root. The [side-by-side comparison](rebalance-comparison.md) shows daily cash, equity and individual trades.
+Open `artifacts/demo-strategies/cross-sectional-momentum/report.html` in a browser to inspect the weekly momentum tear sheet, or see the [side-by-side execution comparison](rebalance-comparison.md) for daily cash, equity, and fill-level attribution across both engines.
 
 ## Event-runner results for January through May 2024
 
@@ -62,7 +62,7 @@ Open `artifacts/demo-strategies/cross-sectional-momentum/report.html` in a brows
 | 5/20 moving average | 1 / 1 | 114.55 | 107,115.45 | +7.12% | -5.63% |
 | 12/26/9 MACD | 2 / 2 | 224.31 | 106,825.69 | +6.83% | -4.24% |
 
-Both timing strategies bought 3,000 shares of China Merchants Bank at CNY 32.34 on March 28. The moving-average strategy held until May 29. MACD sold on April 15, re-entered on April 16 and sold again on May 24. All three runs completed with zero rejected orders.
+Both single-stock strategies entered 3,000 shares of China Merchants Bank (`600036.SH`) at CNY 32.34 on March 28: the 5/20 moving average held continuously until exiting on May 29, whereas MACD exited on April 15, re-entered on April 16, and exited again on May 24. All three runs finished with zero rejected orders.
 
 ## Check the results
 
@@ -72,4 +72,4 @@ TRADEMASTER_DEMO_DATA_ROOT="$DATA_ROOT" TRADEMASTER_DEMO_PLAN="$PLAN" \
   uv run pytest -q tests/test_tushare_demo_strategies.py
 ```
 
-The end-to-end test checks the next-open timing, matches actual fills to opening prices, and reconciles the final cash balance from the fills and individual charges. When `TUSHARE_TOKEN` is set it also queries Tushare Pro for each stock and compares every daily open, high, low, close and trading volume with the Rust request.
+The end-to-end test suite verifies next-open execution timing, matches every simulated fill against recorded opening prices, and reconciles final cash from fills and itemized fees; when `TUSHARE_TOKEN` is exported, it also queries Tushare Pro live to cross-check every daily OHLCV bar inside the Rust request.

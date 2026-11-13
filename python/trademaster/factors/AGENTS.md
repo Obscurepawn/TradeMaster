@@ -1,45 +1,21 @@
-# Factors
+# Factors Guide
 
-This module registers and versions factors, resolves dependencies, computes
-factors deterministically, writes Parquet, indexes results in DuckDB, evaluates
-factors and emits Arrow tables. Provider calls and account updates belong to
-other layers.
+## Scope
 
-Pass M1 data snapshots through `FactorContext`. Keep the exact input snapshot
-provenance in the output and use the stable factor schema. Each row carries
-the registered `factor_id/version` and an event time at or before the cutoff.
+`trademaster.factors` registers and versions factor definitions, resolves dataset and upstream factor dependencies, computes deterministic factor values into Parquet, indexes materializations in DuckDB (`factors/catalog.duckdb`), curates the public factor candidate library (`factors/library/`), and runs cross-sectional factor evaluation (`tm-factor`). Provider network calls and portfolio accounting belong to other layers.
 
-Resolve each dataset dependency to a canonical field. For a composite factor,
-each factor dependency must be registered or declared as an external factor
-by identity. Reject unresolved dependencies.
+## Invariants
 
-## Managed factors and the public library
+- **Snapshot lineage and dependency resolution**: Supply point-in-time data snapshots via `FactorContext`, emit rows conforming to the canonical factor schema with `factor_id@version` and `event_time <= cutoff`, and preserve exact input snapshot provenance. Map dataset dependencies to canonical schema fields, require composite factor dependencies to be registered in `ManagedFactorRegistry` or explicitly declared as external factors by identity, and reject unresolved dependencies.
+- **Managed factor definitions and hash verification**: `FactorDefinition` binds code, parameters, and dependencies; bump the version whenever any component changes. Every materialization records its source data snapshot, input table digest, scope, parent factor materializations, and output Parquet hash. Rehash definitions, manifests, and Parquet files on every load and fail immediately on any mismatch.
+- **Public factor candidate catalog (`factors/library/`)**: Store public sources, collections, and candidates as immutable, content-addressed JSON tracked by a top-level hash manifest, validating DuckDB catalog rows and dependency indexes against that manifest. Record whether each candidate is computable, blocked, a risk model, or a local variant (`implemented` vs. `implemented_variant`), verify formulas, PIT rules, and reference cases before linking a candidate to a `ManagedFactorRegistry` definition, preserve the source report's formula name, and document any local variant deviations.
+- **Deterministic computation and label isolation**: Compute time-series factors independently per instrument unless cross-sectional semantics are specified, breaking rank/sort ties by `instrument_id`. For cross-sectional transforms, group by `event_time` and filter to the eligible universe before fitting winsorization or standardization statistics. Confine forward-return calculations strictly to `evaluation.py` (never exposing forward returns inside factor or signal contexts), align labels to the next eligible execution event, and record feature materializations separately from label evidence.
 
-Use `FactorDefinition` to identify a managed factor's code, parameters and
-dependencies. For each materialization, record the source snapshot, exact
-input table, scope, parent materializations and output hash. Keep the values
-in Parquet and use `factors/catalog.duckdb` for discovery. Bump the version
-whenever a definition changes. On every load, rehash the definitions,
-manifests and Parquet files and reject mismatches.
+## Verification
 
-Store public sources, collections and candidates as immutable, content-addressed
-JSON in `factors/library/`. The top-level manifest lists every member and its
-hash. Check DuckDB entries and dependency indexes against that manifest.
-Candidates can be blocked, risk models or local variants. Verify the formula,
-data and PIT rules, implementation identity and results against reference
-cases. Register the factor and its definition in `ManagedFactorRegistry`.
-Set the library candidate's `implementation_status` to `implemented` or
-`implemented_variant` and link it to the verified definition.
-Preserve the formula name used in the source report and document
-any differences in the local implementation.
-
-## Computation and evaluation
-
-Compute separately for each instrument unless the spec calls for a
-cross-sectional calculation. Break sorting ties by instrument ID. For
-cross-sectional transforms, group by event time and select the eligible
-universe before fitting winsorization or standardization statistics.
-
-Keep forward returns in `evaluation.py` and out of factor and signal contexts.
-Align labels to the next eligible execution event. Record the feature
-materialization and the evidence for each label separately.
+```bash
+uv run pytest tests/test_factor_interfaces.py tests/test_factor_management.py \
+  tests/test_factor_cli.py tests/test_factor_evaluation.py \
+  tests/test_factor_evaluation_v2.py tests/test_public_factor_library.py \
+  tests/test_public_executable_factors.py
+```

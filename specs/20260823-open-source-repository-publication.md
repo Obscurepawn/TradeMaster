@@ -1,80 +1,30 @@
-# Open-source repository publication
+# Initial Open-Source Repository Publication
 
-- Status: complete
-- Owner: Codex
-- Updated: 2026-08-24
+**Status:** Completed | **Date:** 2026-08-24 | **Scope:** Apache-2.0 licensing, ignore policies, package metadata, architecture diagrams, and initial public `main` baseline | **Updated-by:** [Open-Source Documentation and Repository Governance Overhaul](20261113-open-source-documentation-overhaul.md)
 
-## Release scope
+## Motivation and Scope
 
-Publish the local TradeMaster implementation to GitHub `main`. The baseline includes source, tests, shared schemas, public architecture and usage documentation, development specifications, lockfiles, and package metadata. The release work changes how the project is distributed. Backtesting, factor and trading behavior are outside its scope.
+This specification records the initial open-source publication of TradeMaster to GitHub `main` (advancing from the bare `.gitignore` commit `fd656a0` to baseline commit `7b12346`). The release packaged source code, tests, shared Arrow/JSON schemas, architecture diagrams, public documentation, engineering specifications, lockfiles (`Cargo.lock`, `uv.lock`), and Apache-2.0 metadata without altering backtesting, factor, or execution behavior.
 
-- Group the root `.gitignore` rules by data and artifacts, language toolchains, test caches, IDE and OS files, and credentials.
-- Provide a root `README.md` covering purpose, capabilities, architecture, repository layout, installation, configuration, usage, verification, limitations and licensing. Include two editable SVGs covering the architecture and end-to-end data flow, checked at high resolution. Identify Tushare as the only external data provider and distinguish it from local runtime dependencies.
-- Add the full Apache License 2.0 to `LICENSE`, consistent with the Rust workspace. Complete Python README and license metadata.
-- Audit the publication candidates for credentials, ignored material and oversized files. Push the verified commit to `origin/main` by fast-forward.
+## Repository Packaging and Hygiene Rules
 
-## Repository rules
+- **Ignore boundaries (`.gitignore`):** Grouped ignore patterns across local provider caches and backtest outputs (`data/`, `artifacts/`), reference repositories and internal research notes (`research/`, `docs/research/`), Python and Rust build artifacts (`.venv/`, `dist/`, `target/`), IDE/OS metadata, and secret files (`.env`, token files).
+- **Licensing and metadata:** Added the full Apache License 2.0 text in `LICENSE` to match the Rust workspace (`Cargo.toml`) and updated `pyproject.toml` so built wheels and source distributions embed `LICENSE`, `README.md`, and `License-Expression: Apache-2.0`.
+- **Public documentation and SVG diagrams:** Authored `README.md` covering system architecture, layout, installation, `TUSHARE_TOKEN` configuration, CLI usage, verification, and known modeling limits, paired with two editable high-resolution diagrams (`docs/architecture/trademaster-overview.svg` and `docs/architecture/trademaster-data-flow.svg`).
+- **Credential and size audit:** Verified all 155 tracked files (largest file: `uv.lock` at ~245 KB) while keeping ~22.1 GB of local workspace directories (`data/` ~3.0 GB, `artifacts/` ~8.1 GB, `research/` ~5.7 GB, `target/` ~4.8 GB, `.venv/` ~504 MB) untracked on disk.
 
-Keep Tushare tokens, `.env` and other credentials out of the Git index and history. Exclude provider data, backtest artifacts, build caches, virtual environments, candidate repositories in `research/`, and internal evidence with local paths in `docs/research/`. Retain local data and artifacts on disk. Publish `Cargo.lock` and `uv.lock` for reproducibility, together with the source, schemas, tests, public docs, `AGENTS.md` and `specs/`. Verify that local `main` is based on the latest `origin/main` before pushing. The release preserves history and uses ordinary fast-forward updates.
+## Changed Files
 
-## Tasks
+- **Governance & packaging:** `.gitignore`, `LICENSE`, `README.md`, `pyproject.toml`, `Cargo.toml`, `crates/tm-core/Cargo.toml`, `crates/tm-engine/Cargo.toml`, `crates/tm-runner/Cargo.toml`
+- **Architecture & documentation:** `docs/architecture/trademaster-overview.svg`, `docs/architecture/trademaster-data-flow.svg`, `docs/full-a-factor-research.md`, `docs/reviews/20260823-m9-full-a-quality-review.md`, `python/trademaster/strategies/industry_fundamental/README.md`
+- **Specifications:** `specs/INDEX.md`, `specs/20260823-open-source-repository-publication.md`
 
-| Task | Owner | Status | Evidence |
-| --- | --- | --- | --- |
-| Audit Git state, licensing and publication scope | Codex | completed | Local and remote main started at `fd656a0` with only `.gitignore` tracked. |
-| Organize ignore rules and verify the exclusions | Codex | completed | Large data, artifacts, research repositories and caches matched their rules. |
-| Write README, license and package metadata | Codex | completed | README, two SVGs, Apache-2.0 and wheel metadata. |
-| Run security, documentation, build and test checks | Codex | completed | 248 Python tests passed, along with Rust, static, package, documentation and security checks. |
-| Commit and push to origin/main | Codex | completed | Baseline `7b12346` was pushed by fast-forward. |
+## Verification Record
 
-## Acceptance criteria
-
-- [x] `git status --short` contained only source, tests, public documentation and repository metadata intended for publication.
-- [x] Rules explicitly ignored data, artifacts, research, internal research docs, dist, target, virtual environments, caches and secrets.
-- [x] README commands, links, architecture and limitations matched the implementation.
-- [x] Both SVGs passed structural, rendering and crop inspection. Labels and connectors remained legible at different scales.
-- [x] Python and Rust package metadata declared Apache-2.0. The full license was present.
-- [x] Secret, file-size, Markdown link, build, test and lint checks passed.
-- [x] The working tree was clean after the local main commit, and remote main pointed to the same commit.
-
-## Release decisions
-
-Use the Apache-2.0 license already declared in `Cargo.toml`. Publish `docs/architecture` and general usage guides. Keep `docs/research/` private to the workspace. Document how to regenerate data and reports and where the commands write them.
-
-## Changed files
-
-- `specs/INDEX.md`
-- `specs/20260823-open-source-repository-publication.md`
-- `.gitignore`
-- `README.md`
-- `LICENSE`
-- `pyproject.toml`
-- `Cargo.toml`
-- `crates/tm-core/Cargo.toml`
-- `crates/tm-engine/Cargo.toml`
-- `crates/tm-runner/Cargo.toml`
-- `docs/architecture/trademaster-overview.svg`
-- `docs/architecture/trademaster-data-flow.svg`
-- `docs/full-a-factor-research.md`
-- `docs/reviews/20260823-m9-full-a-quality-review.md`
-- `python/trademaster/strategies/industry_fundamental/README.md`
-
-
-## Initial state
-
-The reset local and remote `main` branches both pointed to `fd656a0` with only `.gitignore` tracked. The implementation was untracked. The excluded directories occupied about 3 GB (`data/`), 8.1 GB (`artifacts/`), 5.7 GB (`research/`), 4.8 GB (`target/`) and 504 MB (`.venv/`). There were 155 candidate files. The largest was `uv.lock` at about 245 KB. The candidates contained no copy of the local Tushare token.
-
-## Verification evidence
-
-| Check | Result recorded at publication |
-| --- | --- |
-| Documentation | Pandoc parsed the README as GitHub Flavored Markdown. All relative links across 44 candidate Markdown files resolved to files eligible for publication. |
-| Diagrams | Both passed `validate-svg.sh` and `rsvg-convert`. The reviewer inspected 4000 px renders and 11 cropped details. |
-| License and package | `diff -w` matched the full system Apache-2.0 text. The wheel included `LICENSE` and reported `License-Expression: Apache-2.0`. The sdist included the README and license. |
-| Security and repository | Scans for the exact local Tushare token and common GitHub, AWS and private-key patterns passed. `git check-ignore -v` confirmed exclusions for the large directories. |
-| Python | With a real token, `248 passed in 87.44s`. Ruff, strict Mypy over 44 source files and compileall passed. |
-| Rust | Formatting, Clippy with `-D warnings`, workspace tests and doc tests passed. |
-| Packaging | `uv build` passed. A clean virtual environment could install the wheel and run both CLI `--help` commands. |
-| Remote | Published baseline `7b12346` by fast-forward. Local and remote commits were checked again after the final specification update. |
-
-No open questions remained. The user had authorized the cleanup, commit and push to `main`.
+| Verification Area | Outcome at Publication (`7b12346`) |
+|---|---|
+| Markdown & relative links | `pandoc` parsed `README.md` cleanly as GitHub Flavored Markdown; every relative link across all 44 tracked Markdown files resolved to a tracked target. |
+| Architecture diagrams | Both SVGs passed structural validation (`validate-svg.sh`) and `rsvg-convert` rendering, verified at 4000px full width and across 11 zoomed detail crops. |
+| License & distribution builds | `diff -w` matched the canonical Apache-2.0 text; `uv build` produced sdist and wheel artifacts carrying `License-Expression: Apache-2.0`, verified by installing the wheel into a clean virtual environment and running CLI `--help` entry points. |
+| Secret & ignore audits | Exact-match scans for the local `TUSHARE_TOKEN` and pattern scans for GitHub, AWS, and PEM private keys returned zero matches; `git check-ignore -v` verified exclusion of all data, artifact, research, and build directories. |
+| Python & Rust test suites | Python passed 248 tests in `87.44s` (with live Tushare token isolated to the test process), Ruff, `compileall`, and strict `mypy` (44 source files); Rust passed `cargo fmt --check`, `cargo clippy -D warnings`, workspace tests, and doc-tests prior to fast-forward push to `origin/main`. |

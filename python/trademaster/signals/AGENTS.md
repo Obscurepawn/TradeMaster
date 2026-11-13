@@ -1,16 +1,17 @@
-# Signals
+# Signals Guide
 
-Convert factor observations from a data snapshot into deterministic runtime
-signals. Signal generation has no access to cash, positions, market limits
-or lot sizes.
+## Scope
 
-For cross-sectional signals, rank by factor value and break ties by instrument
-ID. Give unselected universe members a zero target so the rebalancer can exit
-positions. Use eight-place decimal weights that sum to exactly one across the
-selected instruments.
+`trademaster.signals` transforms point-in-time factor observations from a verified data snapshot into deterministic Arrow runtime signal tables via `SignalGenerator.generate(context)`.
 
-Implement `SignalGenerator.generate(context)`. Take the observation cutoff
-and first eligible execution time from `SignalContext`. Schedule execution
-after the observation cutoff. Each generator reads one factor ID/version.
-Copy the snapshot identity and provenance into every output row and the
-Arrow metadata.
+## Invariants
+
+- **Account-free boundary**: Signal generation has zero access to account cash, existing holdings, daily price limits, or instrument lot sizes.
+- **Deterministic cross-sectional weights**: Rank candidates by factor score with `instrument_id` tie-breaking. Assign unselected universe members an explicit zero target weight so downstream rebalancers exit stale holdings, and express positive allocations as exact 8-decimal weights summing to `1.00000000` across selected instruments.
+- **Causal scheduling and provenance**: Read the observation cutoff and first eligible execution timestamp from `SignalContext`, scheduling execution strictly after the observation cutoff. Bind each `SignalGenerator` to a single `factor_id@version`, and propagate the data snapshot ID and provenance hashes into every output row and Arrow schema metadata.
+
+## Verification
+
+```bash
+uv run pytest tests/test_momentum_and_signals.py tests/test_factor_signal_data_integration.py
+```

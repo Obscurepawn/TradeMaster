@@ -1,56 +1,52 @@
 # Command reference
 
-Run these commands from the repository root. `uv sync --locked --extra dev` installs the Python package and development tools. The installation builds the Rust extension. Python console scripts are registered in [pyproject.toml](../../pyproject.toml). The Rust workspace is defined in [Cargo.toml](../../Cargo.toml).
+Run all CLI entry points and module commands from the TradeMaster repository root after provisioning the workspace with `uv sync --locked --extra dev`, which compiles the native Rust extension (`tm-python`) and installs the Python package alongside development tools. Installed console scripts are declared in [pyproject.toml](../../pyproject.toml), while Rust crate members and shared toolchain settings are configured in [Cargo.toml](../../Cargo.toml).
 
 ## Trade execution
 
-| Invocation | Input and result |
+| Invocation | Required inputs and produced artifacts |
 |---|---|
-| `uv run tm-replay docs/examples/round-trip.json` | Reads a saved event request and writes the original-format JSON result to stdout. [Worked example](execution.md#replay-the-three-session-example) · [Command implementation](../../python/trademaster/replay.py) |
-| `uv run tm-replay path/to/request.json` | The request schema selects the snapshot or event engine. A snapshot request resolves its market file relative to the request directory. [File reader](../../crates/tm-runner/src/snapshot.rs) · [Public API](snapshot-backtest.md) |
-| `uv run python -m trademaster.e2e.long_history prepare` and `run` | Prepare the 2011–2025 snapshot once, then time the moving-average strategy and buy-and-hold offline. Use `run --check docs/examples/broad-etf-reference.json` to verify both results. [ETF data and timing method](../examples/broad-etf.md) |
-| `uv run python -m trademaster.e2e.demo_strategies --help` | Run with `--engine events` (default) for the three event-runner reports, or `--engine snapshot` for the same three strategies with pre-open sizing. `--data-root` selects a completed local research cache, `--plan` its SHA and `--output` the report directory. [Source](../../python/trademaster/e2e/demo_strategies.py) · [Run guide](../examples/tushare-strategies.md) |
-| `uv run python -m trademaster.e2e.compare_rebalance --help` | Compares the event and snapshot runners on the same TuShare decisions. The command reads the original strategy bundles, verifies a replay against them, and writes results, daily equity comparisons and repeated timing measurements. [Results and methodology](../examples/rebalance-comparison.md) · [Source](../../python/trademaster/e2e/compare_rebalance.py) |
-| `uv run python -m trademaster.strategies.industry_fundamental --help` | The module accepts dates, initial cash, portfolio selection settings and historical industry policy. A completed run prints paths to the bundle manifest, HTML, Markdown and summary. [Usage and options](../../python/trademaster/strategies/industry_fundamental/README.md) · [Parser](../../python/trademaster/strategies/industry_fundamental_top5/__main__.py) |
-| `uv run python -m trademaster.strategies.industry_fundamental_top5 --help` | Historical command for the same strategy. The [compatibility guide](../../python/trademaster/strategies/industry_fundamental_top5/README.md) records the settings used in earlier runs. |
+| `uv run tm-replay docs/examples/round-trip.json` | Replays a saved event-runner request through the native Rust extension and streams canonical wire JSON to `stdout`. [Worked example](execution.md#replay-the-three-session-example) · [Command implementation](../../python/trademaster/replay.py) |
+| `uv run tm-replay path/to/request.json` | Automatically dispatches to the daily snapshot or event engine based on the request schema; snapshot requests resolve their market JSON path relative to the directory containing `request.json`. [File reader](../../crates/tm-runner/src/snapshot.rs) · [Public API](snapshot-backtest.md) |
+| `uv run python -m trademaster.e2e.long_history prepare` and `run` | `prepare` builds the 2011–2025 broad-ETF data snapshot once; `run` executes and benchmarks both the daily moving-average strategy and buy-and-hold baseline offline, accepting `--check docs/examples/broad-etf-reference.json` to verify exact ledger agreement. [ETF data and timing method](../examples/broad-etf.md) |
+| `uv run python -m trademaster.e2e.demo_strategies --help` | Executes three benchmark strategies with `--engine events` (default, emitting v3 HTML report bundles) or `--engine snapshot` (sharing one verified data snapshot and writing replayable requests and results), taking `--data-root` for the local research cache, `--plan` for its SHA-256 plan ID, and `--output` for the destination directory. [Source](../../python/trademaster/e2e/demo_strategies.py) · [Run guide](../examples/tushare-strategies.md) |
+| `uv run python -m trademaster.e2e.compare_rebalance --help` | Compares event-runner and daily-snapshot execution across identical Tushare strategy decisions—verifying saved event bundles, aligning trades and daily equity curves, and recording repeated native replay timings. [Results and methodology](../examples/rebalance-comparison.md) · [Source](../../python/trademaster/e2e/compare_rebalance.py) |
+| `uv run python -m trademaster.strategies.industry_fundamental --help` | Runs the managed-factor industry-rotation strategy across configurable date ranges, initial cash, constituent caps, and point-in-time industry classification policies, printing paths to the output bundle manifest, HTML report, Markdown summary, and JSON metrics. [Usage and options](../../python/trademaster/strategies/industry_fundamental/README.md) · [Parser](../../python/trademaster/strategies/industry_fundamental_top5/__main__.py) |
+| `uv run python -m trademaster.strategies.industry_fundamental_top5 --help` | Preserves the historical module entry point for the same strategy; see the [compatibility guide](../../python/trademaster/strategies/industry_fundamental_top5/README.md) for settings used in legacy ten-year runs. |
 
-The [four-session blocked-sale example](../../specs/examples/blocked_rotation.py) runs with `uv run python specs/examples/blocked_rotation.py`. It prints daily cash and equity and writes the request and result under `artifacts/blocked-rotation`.
-
-Run `uv run python specs/examples/profile_replay.py` to time the installed Rust extension on 16 instruments over 64, 128, 256 and 512 sessions. The script prints the median replay time in seconds for each history length. [Profiling script](../../specs/examples/profile_replay.py)
+Standalone specification scripts exercise targeted execution behaviors and latency benchmarks directly:
+- Run `uv run python specs/examples/blocked_rotation.py` ([source](../../specs/examples/blocked_rotation.py)) to trace the four-session limit-blocked rotation, printing daily cash and equity while writing replayable artifacts under `artifacts/blocked-rotation`.
+- Run `uv run python specs/examples/profile_replay.py` ([source](../../specs/examples/profile_replay.py)) to benchmark native Rust event replay across 16 instruments over 64, 128, 256, and 512 trading sessions, printing median wall-clock seconds per horizon.
 
 ## IndexOne acquisition
 
-`uv run tm-indexone --data-root data/indexone --request path/to/query.json`
-downloads an allowed core dataset or reopens the matching cache entry. Add
-`--offline` to require cached data or `--refresh` to collect a new observation.
-The command prints the row count, Parquet path and request/content hashes.
-See the [request-file example and credentials](indexone.md#download-a-small-price-sample).
+`uv run tm-indexone --data-root data/indexone --request path/to/query.json` queries an allowlisted IndexOne core dataset or reopens its hash-verified local Parquet cache entry, printing a JSON summary with row count, Parquet path, `request_sha256`, and `content_sha256`. Append `--offline` to enforce cache-only reads without network access or `--refresh` to collect a new immutable observation; see the [request-file walkthrough and credential setup](indexone.md#download-a-small-price-sample).
 
 ## Factor definitions and values
 
-`uv run tm-factor [--root PATH] COMMAND` operates on the managed factor store. The default root is `.trademaster/factors`. An identity such as `fundamental.roe@1` selects a definition. A materialization ID selects saved values for a particular scope and input lineage. [Parser and dispatch](../../python/trademaster/factors/__main__.py) · [Storage and examples](../factor-management.md)
+`uv run tm-factor [--root PATH] COMMAND` manages versioned factor definitions, content-addressed materializations, evaluations, and the public candidate catalog (defaulting `--root` to `.trademaster/factors`). Versioned identifiers such as `fundamental.roe@1` address registered definitions, whereas materialization IDs address persisted Parquet outputs bound to a specific universe, date range, and input lineage. [Parser and dispatch](../../python/trademaster/factors/__main__.py) · [Storage and examples](../factor-management.md)
 
-| Command | Input and result |
+| Subcommand | Inputs and behavior |
 |---|---|
-| `list`, `describe ID@VERSION`, `graph ID@VERSION` | List built-ins, inspect one definition, or print its dependency order. |
-| `materialize ID@VERSION` | Supply `--input-parquet`, `--snapshot-manifest`, `--start`, `--end` and `--as-of`. Parent materializations and coverage keys can be supplied explicitly. Returns a materialization identity. |
-| `verify MATERIALIZATION_ID` | Reopens the saved materialization and verifies the object against the recorded definition and evidence. |
-| `evaluate MATERIALIZATION_ID` | Takes forward returns, a label snapshot, eligible entry times and holding horizons. Saves the factor diagnostics and their evaluation identity. |
-| `library-sync`, `library-status` | Persist the built-in candidate catalog and summarize readiness. |
-| `library-list`, `library-describe CANDIDATE_ID` | Filter persisted candidates by collection, category, status, dependencies or data availability, or inspect an individual candidate record. |
+| `list`, `describe ID@VERSION`, `graph ID@VERSION` | Enumerates built-in factor definitions, prints a single definition's parameters and metadata, or displays its topological DAG dependency order. |
+| `materialize ID@VERSION` | Computes and persists factor values given `--input-parquet`, `--snapshot-manifest`, `--start`, `--end`, and `--as-of` (plus optional explicit parent materializations and coverage keys), returning the new materialization ID. |
+| `verify MATERIALIZATION_ID` | Reloads a persisted materialization and validates its Parquet digest, schema, and lineage against the recorded definition and upstream evidence. |
+| `evaluate MATERIALIZATION_ID` | Joins a verified materialization against causal forward-return labels, eligible entry timestamps, and holding horizons, persisting IC, quantile diagnostics, and the evaluation identity. |
+| `library-sync`, `library-status` | Persists the built-in public A-share factor candidate catalog to disk and summarizes implementation and review readiness. |
+| `library-list`, `library-describe CANDIDATE_ID` | Queries persisted public candidates by collection, category, review status, dependencies, or data availability, or inspects a single candidate's provenance record. |
 
 ## Full-A acquisition and research
 
-`uv run tm-research-full-a --data-root PATH COMMAND` operates on one local acquisition store. Put global options before the command. `plan` obtains trading calendars and security identities through the configured TuShare environment variable. After planning, use the returned `--plan-sha256` to select a plan. [Parser and dispatch](../../python/trademaster/research/__main__.py) · [Full research workflow](../full-a-factor-research.md)
+`uv run tm-research-full-a --data-root PATH COMMAND` drives resumable full-market A-share data acquisition, panel construction, and out-of-core factor evaluation against a local research store (place global options such as `--data-root` before the subcommand). Running `plan` queries trading calendars and security listings using your Tushare environment token (`TUSHARE_TOKEN`) and outputs a `--plan-sha256` digest used by all subsequent steps. [Parser and dispatch](../../python/trademaster/research/__main__.py) · [Full research workflow](../full-a-factor-research.md)
 
-| Command | Input and result |
+| Subcommand | Inputs and behavior |
 |---|---|
-| `plan` | Accepts a date range, statement start and benchmarks. Produces the acquisition plan. |
-| `download`, `status`, `verify` | Resume pending tasks or inspect counts by status. `download --max-tasks N` limits work in this invocation. `--phase` restricts the endpoint group. Once the whole plan has finished, `verify` checks its recorded outcomes and completed objects. |
-| `reconcile-universe` | Reconciles instrument identities against cached market evidence when the current security list omitted historical names. |
-| `materialize` | Builds the market panel, factor values and labels for the requested observation frequency and return horizons. Writes a panel manifest under `--output-root`. |
-| `materialize-fundamental` | Takes a plan and a specific panel manifest, then writes fundamental inputs and outputs for the evidenced scope. |
-| `evaluate` | Computes diagnostics from the panel and selected factor manifest, producing an offline report under `--report-root`. |
-| `verify-report` | Verifies a saved report against its manifest. |
+| `plan` | Freezes study date bounds, financial-statement lookback start, and benchmark indices into a content-addressed `DownloadPlanManifest`. |
+| `download`, `status`, `verify` | Executes resumable task batches (`--max-tasks N` caps work per invocation; `--phase` targets a specific endpoint group), summarizes task counts by state, or verifies all recorded task outcomes and Parquet digests once acquisition completes. |
+| `reconcile-universe` | Reconciles security master coverage against cached daily market observations when current exchange listings omit delisted historical tickers. |
+| `materialize` | Constructs the dense `(instrument, session)` market panel, public factor scores, and causal forward-return labels for the requested observation frequency and horizons, writing a panel manifest under `--output-root`. |
+| `materialize-fundamental` | Joins point-in-time financial statement revisions and industry classifications onto a target panel manifest, persisting fundamental factor values across covered instruments. |
+| `evaluate` | Computes out-of-core universe coverage, IC, rank IC, and quantile diagnostics from a panel and factor manifest, publishing a self-contained report under `--report-root`. |
+| `verify-report` | Validates a published research report and its metric tables against its provenance manifest. |
 
-For exact required flags, append `--help` to a command. For example, `uv run tm-research-full-a --data-root data/research/demo evaluate --help` prints the evaluation inputs without contacting a provider.
+Append `--help` to any subcommand—for example, `uv run tm-research-full-a --data-root data/research/demo evaluate --help`—to inspect exact flag requirements locally without contacting a data provider.

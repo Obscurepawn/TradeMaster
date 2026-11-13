@@ -1,9 +1,16 @@
 # Test Guide
 
-Test public behavior and the records callers rely on. Prefer temporary DuckDB
-databases, real Parquet files, and Arrow tables. Use mocks only for external,
-slow, destructive, or nondeterministic operations. Give each test one primary
-reason to fail.
+## Scope
 
-When missing credentials prevent a network test from running, report it as
-skipped and exclude it from the count of verified network tests.
+`tests/` contains TradeMaster's Python unit, integration, contract, research, and replay suites exercising public Python APIs and the compiled `trademaster._native` Rust extension.
+
+## Invariants
+
+- **Behavior-focused assertions over real storage**: Assert on public interfaces and persisted records that callers depend on, giving each test a single primary reason to fail. Use temporary DuckDB databases, real Parquet files, and Arrow tables; reserve mocks or deterministic fakes strictly for external network calls, slow I/O, destructive actions, or nondeterministic inputs.
+- **Explicit credential-gated skips**: When absent environment credentials (`TUSHARE_TOKEN` or `INDEXONE_API_KEY`) prevent a live provider test from executing, mark it as `skipped` and exclude skipped tests from reported live-network verification counts.
+
+## Verification
+
+```bash
+uv run pytest -q
+```

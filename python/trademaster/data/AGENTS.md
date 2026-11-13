@@ -1,82 +1,21 @@
-# Data layer
+# Data Layer Guide
 
-This module configures providers, stores immutable Parquet objects, tracks
-coverage in DuckDB, runs point-in-time (PIT) queries and publishes snapshots.
-Parquet holds the source records. DuckDB indexes and queries them. Read
-credentials only when calling the provider adapter. Keep token values out of
-model representations, logs, catalog rows, manifests and tests.
+## Scope
 
-## IndexOne research observations
+`trademaster.data` configures provider adapters (`TushareProvider`, `IndexOneDataSource`), writes immutable Parquet objects, tracks dataset coverage and revisions in DuckDB, executes point-in-time (PIT) queries, and publishes verified data snapshots via `CacheFirstDataPortal`. Parquet is the canonical store; DuckDB serves strictly as an index and query engine.
 
-`IndexOneDataSource` implements `ResearchDataSource` with a separate DuckDB
-request index and immutable Parquet responses. It does not publish into the
-TuShare canonical store or change its source policy. Read `INDEXONE_API_KEY`
-only on an uncached request. The key ID is not sent for authentication.
+## Invariants
 
-Keep the HTTP client restricted to the documented read-only core operations.
-Validate inputs against the live operation catalog. The execute endpoint has no
-pagination; reject oversized or truncated responses rather than caching a prefix.
-On cache reads, verify request metadata, content hash, schema and row count.
-Fetched time records collection and must not become historical availability.
-Run `tests/test_indexone_client.py` and `tests/test_indexone_source.py` when changing
-this path. See [IndexOne usage](../../../docs/reference/indexone.md) for imports.
+- **Lazy credential access and secret redaction**: Read `TUSHARE_TOKEN` and `INDEXONE_API_KEY` from the environment only when executing an uncached network request (never send the IndexOne key ID for authentication). Keep token values out of model `repr`s, logs, DuckDB catalog rows, manifests, and test fixtures.
+- **IndexOne research isolation (`IndexOneDataSource`)**: Implement `ResearchDataSource` against a dedicated DuckDB request index and immutable Parquet store without writing to the Tushare canonical store or relaxing its source policy (see [IndexOne usage](../../../docs/reference/indexone.md)). Restrict HTTP calls to documented read-only core operations validated against the live operation catalog. Because the execute endpoint is unpaginated, reject oversized or truncated responses rather than caching partial prefixes. Verify request metadata, content SHA-256, schema, and row count on cache reads, and treat fetch timestamps strictly as collection metadata—never as historical `known_at` availability.
+- **Dataset registry, resolution, and provenance**: Register every dataset's primary key, partitions, coverage keys, and availability fields (including datasets without an instrument or trade date). `RequestResolver` on `CacheFirstDataPortal` may populate only instruments and coverage keys; reject instrument-scoped requests when both explicit and resolved instrument lists are empty. Derive `known_at >= event_time` from the dataset's availability policy rather than ingestion time, and record all raw input hashes on staging objects. Default `tushare_only` mode requires upstream raw lineage and replays the full raw-to-staging chain; require explicit `trusted_imports` for synthetic fixtures or external offline imports, rejecting unverifiable objects in strict recovery or query mode.
+- **Venue coverage, ETF routing, and pagination**: Verify every required `(instrument, session)` pair per venue before publishing `daily_bars` or `daily_limits_status` (documented suspensions account for missing bars; sparse datasets must define absent-row semantics explicitly). Rebuild coverage from normalized request metadata in Parquet and verify parity with DuckDB. Configure ETFs explicitly (since equities share `.SH`/`.SZ` suffixes), route them through `etf_basic` and `fund_daily`, and reject unsupported ETF datasets without falling back to stock endpoints. Enforce contiguous pagination from offset `0` through full intermediate pages to a short final page (a full last page requires another request); rehash cached pages before resuming, and refetch from offset `0` whenever an endpoint can revise earlier pages or empty responses.
+- **PIT cutoffs, revisions, and snapshot merging**: Enforce row-level `known_at <= as_of` and reject any Parquet object mixing eligible and post-cutoff rows (whose `known_at_max` could conceal an eligible correction). On `load_snapshot()`, replay status evidence at the cutoff, reject superseded suspension records, and check included objects against all catalogued revisions eligible at that cutoff. Rank rows by revision within each business primary key across exact-scope objects, and abort publication if a newer eligible revision exists only in an object with broader coverage, universe, interval, or field scope. Replay composite staging objects independently (e.g., verify `daily_limits_status` from its exact `stk_limit`, `suspend_d`, and `stock_st` inputs). Merge snapshot requests sharing a dataset and resolved universe when coverage keys overlap (directly or transitively), emitting one coverage proof and listing each shared object once in the manifest.
 
-## Requests and availability
+## Verification
 
-Define each dataset's primary key, partitions, coverage keys and availability
-fields in the registry. Some datasets have no instrument or trade date.
-Configuration or the universe manager can supply the `RequestResolver` for
-`CacheFirstDataPortal`. It may fill instruments and coverage keys only. For a
-dataset that requires instruments, use the list in the request or one supplied
-by this resolver. Reject the request if both are empty.
-
-Ingestion time records when evidence was collected. Derive `known_at` from the
-dataset's availability policy. It must be at or after `event_time`. Each staging
-record lists the hashes of all raw inputs. The default `tushare_only` mode
-requires at least one upstream object and replays the full raw and staging
-chain. Use `trusted_imports` explicitly for synthetic fixtures and offline
-imports. In strict mode, reject those objects on recovery or query if their
-provenance cannot be verified.
-
-## Coverage and provider pages
-
-Check every required instrument/session pair for each venue before publishing
-`daily_limits_status` and `daily_bars`. A documented suspension accounts
-for a missing bar. For sparse datasets, define what an absent row means
-before requiring full coverage.
-
-Rebuild coverage from the normalized request stored in the Parquet object.
-Compare the full result with DuckDB's coverage record.
-
-Configure ETFs explicitly because stocks share the `.SH` and `.SZ` suffixes.
-Route ETFs through `etf_basic` and `fund_daily`. Reject unsupported ETF datasets
-without querying stock endpoints.
-
-A raw request starts at page zero, follows contiguous endpoint-specific
-cursors, and ends with a short page. All intermediate pages must be full.
-A full last page requires another request. When resuming, rehash and validate
-every cached page before fetching the first missing offset. For endpoints that
-can revise empty or full responses, refetch every page from offset zero on
-each ingestion. Earlier full pages can contain corrections.
-
-## Revisions and snapshots
-
-Check each row's `known_at` against the as-of time. Reject an object that
-mixes eligible and future rows. Its `known_at_max` can conceal an eligible
-correction. When loading a saved snapshot, replay status evidence at its cutoff
-and reject superseded suspension records. `load_snapshot()` also checks its
-objects against every currently catalogued revision eligible at that cutoff.
-
-Keep every eligible revision object with the exact requested scope. Rank rows
-by revision within each business primary key. Before publishing, compare the
-selected rows with every immutable object containing rows in scope. Reject
-publication if a newer eligible revision is found only in an object with wider
-coverage, universe, interval or field scope.
-
-Validate the inputs to each composite staging object separately. To reproduce
-one `daily_limits_status` object, replay its own `stk_limit`, `suspend_d` and
-`stock_st` inputs.
-
-Merge snapshot requests for the same dataset and resolved universe when their
-coverage keys overlap, including through another request. Produce one coverage
-proof and list each shared object once in the manifest.
+```bash
+uv run pytest tests/test_data_config_registry.py tests/test_parquet_object_store.py \
+  tests/test_duckdb_catalog.py tests/test_coverage_portal.py tests/test_pit_snapshot.py \
+  tests/test_tushare_provider.py tests/test_indexone_client.py tests/test_indexone_source.py
+```

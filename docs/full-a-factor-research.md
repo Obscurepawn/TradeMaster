@@ -1,14 +1,14 @@
 # Twenty years of A-share factor research
 
-The M9 study evaluates public price factors and fundamental factors across historical A-share listings. After three independent reviews on 2026-08-23, the team rebuilt the factor panels and reports and withdrew the earlier conclusions. The earlier reports remain available for comparison. [Review and dispositions](reviews/20260823-m9-full-a-quality-review.md)
+Do published technical and fundamental factors retain predictive power across the entire historical A-share market once survivorship bias, look-ahead filing dates, and market-cap exposure are removed? The M9 study answers that question across 20 years of point-in-time (PIT) Shanghai, Shenzhen, and Beijing listings. Following three independent engineering and methodology audits on 2026-08-23, the team remediated look-ahead filing alignment, rebuilt the market-wide factor panels and reports from scratch, and formally withdrew pre-audit conclusions (retaining earlier artifacts solely for audit comparison). Across the rebuilt 20-year sample, almost all of raw Size's apparent alpha (`RankIC -0.0668`) disappears after size neutralization (`0.0074`), whereas fundamental value yields strengthen (`Book yield` rising from `0.0555` to `0.0590`) and short-horizon GTJA price alphas persist (`Alpha046` at `0.0562`, `Alpha088` at `-0.0675`) alongside elevated turnover (`0.74–0.81`). [Review and dispositions](reviews/20260823-m9-full-a-quality-review.md)
 
 ## Universe and coverage
 
-M9 requests data through the latest completed trading day. The recorded plan covered **2006-08-23 through 2026-08-21**: 4,860 sessions, 5,846 CNY stocks listed in Shanghai, Shenzhen or Beijing, and 52,563 download tasks. The universe uses all L/D/P/G statuses from `stock_basic` and expands each stock across its effective listing and delisting dates. For three historical codes absent from the current master, the plan inferred listing intervals from observed market data.
+M9 plans data acquisition through the latest completed trading session. The published study spans **2006-08-23 through 2026-08-21**—covering 4,860 trading sessions, 5,846 CNY A-shares listed across Shanghai, Shenzhen, and Beijing, and 52,563 resumable Tushare download tasks. To prevent survivorship bias, the universe includes all `L/D/P/G` listing states from `stock_basic`, expanding each security strictly across its effective listing and delisting dates; for three historical tickers absent from the current master table, listing intervals were inferred from observed market bars.
 
 **Plan SHA-256** `6ce15c56c759a79f635af3ac489bbeb624620670e4f4cd323eb80935ed17a633`
 
-Coverage includes the stock master, calendars, OHLCV, adjustment factors, daily valuations/market cap/turnover, price limits, suspensions, ST status, financial indicators, the three financial statements, common benchmarks and available SW2021 industry history. News, options, ticks and unlicensed proprietary flow data are outside scope.
+Acquired datasets cover the stock master, exchange calendars, raw OHLCV bars, adjustment factors, daily valuation and turnover metrics (`daily_basic`), opening price limits, trading suspensions, special-treatment (`ST`) history, financial indicators, all three financial statements, common equity benchmarks, and available SW2021 industry membership intervals. News feeds, options, intraday ticks, and unlicensed proprietary order-flow series remain outside scope.
 
 ## From Tushare to a report
 
@@ -24,7 +24,7 @@ Tushare
   -> content-addressed JSON/Parquet + standalone HTML/Markdown
 ```
 
-Tushare responses go into Parquet. `catalog.duckdb` indexes them by request, and `research.duckdb` tracks download progress. Before marking a task complete, the downloader checks the file, hash, row count and fields. It matches the request hash in the task, the cache record and the Parquet metadata. If the process stops between writing a file and marking the task complete, the next run picks up the existing file.
+Every Tushare response is written to immutable Parquet, indexed by canonical request hash in `catalog.duckdb`, and tracked in `research.duckdb`. Before committing a task, the downloader cross-checks file integrity, SHA-256 digest, row count, schema fields, and canonical request hash across the task record, cache catalog, and Parquet metadata; if a worker crashes between writing a Parquet file and updating DuckDB, the next run reconciles and reuses the saved file without re-querying the provider.
 
 Default data root:
 
@@ -38,7 +38,7 @@ data/research/full-a-20y/
 
 ## Plan, download and verify
 
-Set `TUSHARE_TOKEN` before running `plan` or `download`. The planner opens a Tushare client even when the stock list and calendars are already cached. The token stays in the process environment. The example uses the recorded M9 plan hash. For a new run, use the hash printed by `plan`.
+Export `TUSHARE_TOKEN` in your shell before running `plan` or `download` (the planner initializes a Tushare client even when stock listings and calendars are already cached, keeping the credential strictly in process memory). The commands below reference the published M9 plan digest; substitute the SHA-256 printed by `plan` when starting a new window.
 
 ```bash
 export TUSHARE_TOKEN="$(<~/.config/trademaster/tushare_token)"
@@ -57,11 +57,11 @@ tm-research-full-a --data-root data/research/full-a-20y verify \
   --plan-sha256 6ce15c56c759a79f635af3ac489bbeb624620670e4f4cd323eb80935ed17a633
 ```
 
-Download phases are `bootstrap`, `market`, `status`, `statement`, `industry` and `benchmark`. To run a small batch, set `--max-tasks N` and repeat the command to resume. Once all phases finish, `verify` checks every object. In the status output, `object_acquired` means rows were saved and `verified_empty` means the request returned zero rows. Confirmed gaps in source history and denied access have separate statuses, `source_history_absent` and `permission_blocked`.
+Acquisition proceeds across six phases—`bootstrap`, `market`, `status`, `statement`, `industry`, and `benchmark`—and supports bounded batching via `--max-tasks N` for incremental resumption. Once all tasks complete, `verify` audits every stored object. In `status` output, `object_acquired` indicates non-empty Parquet evidence and `verified_empty` indicates a valid zero-row response, whereas confirmed upstream coverage gaps and credential limits surface explicitly as `source_history_absent` and `permission_blocked`.
 
 ## Materialize panels and evaluate factors
 
-Replace the angle-bracketed plan and manifest references below with the values printed by the preceding commands.
+Substitute the plan and manifest digests printed by each preceding step into the angle-bracketed placeholders below:
 
 ```bash
 tm-research-full-a --data-root data/research/full-a-20y materialize \
@@ -97,59 +97,55 @@ tm-research-full-a --data-root data/research/full-a-20y verify-report \
   --manifest <report-manifest-path>
 ```
 
-Each v3 report records the manifest hashes for its market panel and factor inputs. The CLI verifies the input files before evaluation. Use `verify-report` to check the resulting report files.
+Every `v3` research report binds the cryptographic manifest hashes of both its market panel and its factor inputs; `evaluate` verifies all upstream files before computing diagnostics, and `verify-report` re-checks the emitted report bundle offline.
 
-The dense panel retains each trading session for each active stock, including suspensions and missing bars. Thus `lag(5)` means five **market sessions**. Factors use the full session windows before sampling month-end observations.
-
-For a factor observed at the close of T, `next_session_close` measures the return from the close of the next trading session to the close `h` sessions later. If entry is blocked, a price is missing or the sample ends too soon, the evaluator keeps the label row and records the reason.
+Because the materialized panel forms a dense grid of active listings × exchange trading sessions—retaining suspended days and missing bars—a five-period lag (`lag(5)`) always spans five **market sessions** rather than five traded bars, and rolling technical windows evaluate across full daily history before sampling month-end observations. For a factor observed as of session `T`'s close, `next_session_close` measures the forward return from the close of `T + 1` to the close `h` sessions later; when entry is blocked, an endpoint price is missing, or the sample ends before `T + 1 + h`, the label row is preserved alongside its explicit dropout reason.
 
 ## Managed factors
 
-The first public report covers `huatai53.size.log_total_market_value@1` and `gtja191.alpha014/015/018/020/031/034/046/053/058/088@1`. The fundamental PIT builder also produces nine existing atomic factors and `fundamental.composite.global@1`.
+The public price-factor report evaluates `huatai53.size.log_total_market_value@1` and `gtja191.alpha014/015/018/020/031/034/046/053/058/088@1`, while the PIT fundamental builder computes TradeMaster's nine atomic financial factors plus `fundamental.composite.global@1`.
 
-Tushare reports a filing's date in `ann_date`. The factor builder first uses the filing in the next eligible session. When the publication time of a revision is unknown, it uses the original `update_flag=0` record. The manifest identifies the policies as `date_only_next_eligible_session` and `original_only_without_revision_known_at`. Each observation records `financial_known_at_session`.
-
-The builder computes `fundamental.composite.industry_relative@1` when every stock has one industry assignment on its observation date. A missing or ambiguous assignment produces `historical_industry_membership_interval_gap` in the manifest.
+Because Tushare's `ann_date` provides only a calendar date without an intraday timestamp, financial filings first enter the factor cross-section on the next eligible session (`date_only_next_eligible_session`), and undated restatements are ignored in favor of initial `update_flag=0` disclosures (`original_only_without_revision_known_at`), recording `financial_known_at_session` on every row. The builder computes `fundamental.composite.industry_relative@1` only when every candidate carries an unambiguous PIT industry assignment on the observation date; any unmapped interval records `historical_industry_membership_interval_gap` in the manifest.
 
 ## Metric definitions
 
 | Metric | Interpretation |
 | --- | --- |
-| Universe coverage | Expected number of instrument × observation-date keys in the PIT universe. |
-| Factor / Label / Joint coverage | Fractions with a valid factor, valid label or both. Each denominator is the PIT universe. |
-| Horizon label coverage / invalid reason | Report label coverage, joint coverage and invalid reasons separately for each horizon. |
-| IC / RankIC | Pearson or rank correlation between raw factor values and forward returns. |
-| ICIR / RankICIR | Mean IC divided by its time-series standard deviation, without implicit annualization. |
-| IC t-stat | Significance of the mean under independent, identically distributed observations. |
-| Newey-West t-stat | Accounts for heteroskedasticity and serial correlation. Use this when reading overlapping horizons. |
-| Positive IC ratio | Fraction of observation periods with IC greater than zero. |
-| Quantile monotonicity | Correlation between the quantile number and its average return. |
-| Top-Bottom spread | Forward return of the economically top group minus the bottom group, using the definition's direction. IC and RankIC retain the raw sign. |
-| Direction | `-1` puts low raw values in the top group. `0/+1` puts high values in the top group. |
-| Spread Sharpe / drawdown | The shortest gap between observed month-ends was 14 sessions. For overlapping 20/60/120/252-session returns, cumulative spread, Sharpe, drawdown and recovery are N/A. |
-| Recovery events | Longest run of observations below the previous high-water mark. |
-| Top turnover | Change in top-group membership between consecutive observations. |
-| Size correlation | Cross-sectional correlation of the factor with `log(total_mv)`. |
-| Size-neutral RankIC | Regress `raw factor ~ 1 + log(total_mv)` cross-sectionally. Compute the RankIC between the residuals and future returns. |
-| Top cap tercile shares | Fractions of top-group members in the small, middle and large current-cap terciles of the full PIT universe. |
-| Industry RankIC | Within-industry RankIC where historical PIT membership exists. Otherwise N/A. |
-| Capacity proxy | Approximate AUM = the smallest traded amount among top-group stocks × participation rate × number of stocks. The proxy uses reported traded value and omits depth, impact, commissions, stamp duty, slippage and price-limit queues. |
-| Factor correlation | Calculate Pearson/Spearman for each event, then weight valid events equally. The count is the number of events. Use it to identify redundant factors. |
+| Universe coverage | Expected count of active instrument × observation-date keys in the PIT universe. |
+| Factor / Label / Joint coverage | Shares of the PIT universe with a valid factor, a valid forward return, or both. |
+| Horizon label coverage / invalid reason | Per-horizon valid label rate, joint coverage, and itemized dropout reasons. |
+| IC / RankIC | Cross-sectional Pearson or Spearman rank correlation between raw factor scores and forward returns. |
+| ICIR / RankICIR | Time-series mean IC divided by its standard deviation, reported without implicit annualization. |
+| IC t-stat | t-statistic of mean IC under independent, identically distributed period assumptions. |
+| Newey-West t-stat | Heteroskedasticity- and autocorrelation-consistent (HAC) t-statistic; preferred whenever forward horizons overlap. |
+| Positive IC ratio | Fraction of observation dates with cross-sectional IC strictly greater than zero. |
+| Quantile monotonicity | Rank correlation between quantile index and mean quantile forward return. |
+| Top-Bottom spread | Mean forward return of the economically top quantile minus the bottom quantile (oriented by `Direction`, whereas IC and RankIC retain the raw factor sign). |
+| Direction | `-1` places low raw values in the top quantile; `0/+1` places high raw values in the top quantile. |
+| Spread Sharpe / drawdown | Reported only for non-overlapping horizons; because month-end observations sit as few as 14 sessions apart, compounding 20/60/120/252-session spreads would double-count sessions and is marked `N/A`. |
+| Recovery events | Longest consecutive streak of non-overlapping observations below the prior high-water mark. |
+| Top turnover | One-way membership turnover in the top quantile between consecutive observation dates. |
+| Size correlation | Cross-sectional correlation between the factor and `log(total_mv)`. |
+| Size-neutral RankIC | Spearman RankIC between forward returns and cross-sectional OLS residuals from `raw_factor ~ 1 + log(total_mv)`. |
+| Top cap tercile shares | Proportions of top-quantile stocks falling into the small-, mid-, and large-cap terciles of the concurrent PIT universe. |
+| Industry RankIC | Within-industry RankIC where complete PIT industry assignments exist; otherwise `N/A`. |
+| Capacity proxy | Approximate CNY AUM = smallest daily traded value in the top quantile × participation rate × top-quantile stock count (omits order-book depth, market impact, fees, and price-limit queues). |
+| Factor correlation | Equal-weighted average of per-event cross-sectional Pearson and Spearman correlations across valid observation dates, used to flag redundant signals. |
 
-The evaluator assigns each stock to a quantile **before** joining future returns. A stock that later delists stays in its original group. To measure what a portfolio could actually trade, replay the targets through Rust, which applies price limits and records delayed exits.
+Stocks enter cross-sectional quantiles **before** joining forward returns, keeping any stock that subsequently halts or delists inside its assigned bucket. Because quantile spreads omit price limits, T+1 settlement, and delayed exits, tradable portfolio returns must always be measured through the Rust execution engine.
 
 ## Known data limits
 
-- Tushare returned no independent Beijing (BSE) calendar. Since 2021-11-15, BSE sessions use a versioned SSE-derived mapping.
-- SW2021 dates industry membership with `in_date/out_date`. Some historical intervals since 2006 are missing, so industry-neutral metrics for those observations are unavailable.
-- `stock_st` advertises history from 2000. Coverage still requires an audit by day.
-- HFQ = `raw_price * adj_factor` is for factor research. Execution and trading constraints use raw market prices.
-- Direction comes from the managed definition and enters the evaluation config hash. It is set independently of full-sample returns: `-1` for Size and `0` for the ten GTJA factors.
-- The remaining breakdowns cover ST status, board, listing age and price-limit entries/exits. Producing them requires dated status histories and a replay of delayed exits.
+- **Beijing Stock Exchange calendar:** Tushare returned no standalone BSE calendar; sessions since 2021-11-15 use a versioned SSE-derived calendar mapping.
+- **SW2021 industry history:** `index_member_all` omits 15,013 historical `in_date/out_date` intervals since 2006, leaving within-industry metrics unavailable on affected dates.
+- **Special-treatment (`stock_st`) history:** Although Tushare advertises coverage from 2000, day-by-day completeness still requires explicit verification before filtering strategies on historical ST flags.
+- **Back-adjusted vs. tradable prices:** Back-adjusted prices (`HFQ = raw_price * adj_factor`) are restricted to continuous factor windows; order sizing, price limits, and ledger accounting require raw prices.
+- **Ex-ante factor direction:** Economic direction comes from each `FactorDefinition` (`-1` for Size; `0` for the ten GTJA price alphas) and enters the evaluation configuration hash without peeking at in-sample returns.
+- **Stratified microstructure breakdowns:** Disaggregating performance by ST state, exchange board, listing age, and price-limit exit delays requires dated status schemas paired with Rust execution replay.
 
 ## Results from the M9 run
 
-The local index is `artifacts/research/full-a-20y/FINAL_REPORT.md`. Generated `artifacts/` files are excluded from Git. The final download marked 52,563/52,563 tasks complete, with 52,439 `object_acquired`, 124 `verified_empty` and 0 failed/blocked. With a real token, a full cache probe made zero provider calls. Verification rechecked the task/evidence/Parquet request SHA, object SHA, metadata and row counts. Raw data occupied about 2.7 GB.
+The local summary index is generated at `artifacts/research/full-a-20y/FINAL_REPORT.md` (all `artifacts/` paths are Git-ignored). Acquisition completed all 52,563/52,563 planned tasks—recording 52,439 `object_acquired`, 124 `verified_empty`, and zero failed or blocked tasks (~2.7 GB of raw Parquet). A subsequent full-cache probe with a live token issued zero network calls, and `verify` confirmed every canonical request hash, content SHA-256, schema, and row count across tasks, catalog records, and Parquet files.
 
 **Market panel manifest** `9f163dd4c7b3fe958c4beb363303e767dbe40c00523e5d2a928ef24feb1d4c89`
 
@@ -169,7 +165,7 @@ The local index is `artifacts/research/full-a-20y/FINAL_REPORT.md`. Generated `a
 | Alpha088 | -0.0690 | -0.0675 |
 | Size | -0.0668 | 0.0074 |
 
-Almost all of Size's raw effect was market-cap exposure. The top group for technical factors turned over about 0.74–0.81, compared with about 0.11 for direction-adjusted Size. Its capacity proxy was about CNY 4.75 million. Per-event rank correlations indicated redundancy: Alpha031/034 was -1.0000, Alpha034/046 was 0.9583 and Alpha058/088 was 0.5575.
+Residualizing against `log(total_mv)` collapsed Size's 20-session RankIC from `-0.0668` to `0.0074`, confirming that its raw spread reflects pure small-cap beta with a modest top-quantile capacity proxy of roughly CNY 4.75 million and low monthly turnover (~0.11). By contrast, the strongest GTJA price-reversal alphas retained their predictive power after size neutralization (`Alpha046` at `0.0562`, `Alpha088` at `-0.0675`) at the cost of `0.74–0.81` monthly top-quantile turnover and substantial cross-factor collinearity (`Alpha031`/`Alpha034` rank correlation `-1.0000`, `Alpha034`/`Alpha046` `0.9583`, and `Alpha058`/`Alpha088` `0.5575`).
 
 ### Fundamental factors (10)
 
@@ -185,6 +181,6 @@ Almost all of Size's raw effect was market-cap exposure. The top group for techn
 | Earnings yield | 0.0335 | 0.0578 |
 | Global composite | 0.0279 | 0.0459 |
 
-The stricter PIT policy reduced global composite raw RankIC from 0.0315 to 0.0279. For the nine atomic fundamentals, about 170,000–180,000 exposures valid under both policies changed value. The global composite changed in 613,223 jointly valid cases. Top-group turnover was about 0.04–0.16, with capacity proxies of roughly CNY 16–65 million. The builder skipped the industry-relative composite because 15,013 historical industry intervals were missing.
+Enforcing next-session filing availability and `update_flag=0` restatement filtering (`date_only_next_eligible_session` + `original_only_without_revision_known_at`) shifted roughly 170,000–180,000 jointly valid exposures per atomic factor and 613,223 rows in `fundamental.composite.global@1`, trimming the global composite's raw 20-session RankIC from `0.0315` to `0.0279` while raising its size-neutral RankIC to `0.0459`. Fundamental top quantiles exhibited low monthly turnover (`0.04–0.16`) and substantially deeper capacity proxies (roughly CNY 16–65 million); `fundamental.composite.industry_relative@1` was skipped because of the 15,013 missing historical SW2021 intervals.
 
-Across 15,882,389 active session rows the real panel had 15,370,049 bars. Zero same-day bars lacked `adj_factor`, and 20 lacked `daily_basic`. Explicit suspensions accounted for 473,924 rows and continuity of adjustments identified 52,523 more. Another 4,963 missing bars lacked explanatory evidence. There were zero non-finite values among valid factors or forward returns.
+Across all 15,882,389 active stock-session rows in the 20-year panel, 15,370,049 carried traded daily bars—with zero bars missing `adj_factor` and only 20 missing `daily_basic`. Of the remaining inactive rows, explicit suspension records explained 473,924 sessions and adjustment-factor continuity accounted for another 52,523, leaving 4,963 unexplained missing bars and zero `NaN` or infinite values among valid factors or forward-return labels.

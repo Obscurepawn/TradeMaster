@@ -1,5 +1,6 @@
 [package]
 name = "tm-engine"
+description = "Deterministic order validation, market simulation, and FIFO lot-ledger accounting for TradeMaster"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

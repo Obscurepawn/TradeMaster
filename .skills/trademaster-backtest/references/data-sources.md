@@ -1,31 +1,31 @@
 # Historical data sources
 
-## Prepare the TuShare demo
+## Prepare the Tushare demo
 
-Use the five-stock walkthrough to prepare a new TuShare Pro cache or select an existing one, then run the snapshot and event examples. A new cache requires `TUSHARE_TOKEN` in the shell environment. Keep the token out of source files and saved output. The long-history ETF example has a separate preparer that also collects cash distributions. [Five-stock setup and offline runs](../../../docs/examples/tushare-strategies.md#run-the-examples) · [ETF benchmark](../../../docs/examples/broad-etf.md)
+Follow the five-stock walkthrough to populate a local Tushare Pro cache or reuse an existing one before running the snapshot and event demos. Creating a new cache requires `TUSHARE_TOKEN` in the shell environment—never hard-code tokens in source files or write them into saved outputs. The fifteen-year broad ETF benchmark provides its own preparation command that also ingests cash distributions. [Five-stock setup and offline runs](../../../docs/examples/tushare-strategies.md#run-the-examples) · [ETF benchmark](../../../docs/examples/broad-etf.md)
 
 ## Prepare a US-stock data snapshot
 
-Use the bundled [IndexOne data source](../../../docs/reference/indexone.md) to acquire prices, company financials, security reference data or FX, or use the user's chosen CSV, Parquet file or API. Map the observations through `Snapshot.create` using the table below. IndexOne acquisition preserves source evidence; the snapshot loader still supplies calendar, opening-status and corporate-action coverage. Store source extracts in Parquet and keep API credentials in environment variables. The [US-stock walkthrough](../../../README.md#backtest-a-us-stock-strategy) shows how to run and replay the resulting snapshot.
+Acquire historical prices, company financials, security reference records, or FX rates via the bundled [IndexOne data source](../../../docs/reference/indexone.md), or load the user's CSV, Parquet, or vendor API extracts, and publish them through `Snapshot.create` using the field mapping below. While IndexOne caches immutable Parquet responses and `ResearchObjectEvidence`, the snapshot loader remains responsible for exchange calendars, opening trading permissions, and corporate-action continuity. Persist raw extracts in Parquet and read API keys exclusively from environment variables. See the [US-stock walkthrough](../../../README.md#backtest-a-us-stock-strategy) to execute and replay the published snapshot.
 
-Configure each US stock explicitly: `currency="USD"`, `venue="nyse"` or `"nasdaq"`, `buy_lot_size=1`, and the applicable `tick_size`. Select `settlement` and pass an explicit `Policy` using the [trading-rule contract](../../../docs/reference/snapshot-backtest.md#configurable-trading-rules), which defines fees, price-limit enforcement and the model's supported scope.
+Configure each US equity instrument explicitly with `currency="USD"`, `venue="nyse"` or `"nasdaq"`, `buy_lot_size=1`, and its applicable `tick_size`. Select the instrument `settlement` rule (`"t0"` for immediate share resale availability) and pass an explicit `Policy` (such as `enforce_price_limits=False` and zero A-share stamp/transfer taxes) per the [trading-rule contract](../../../docs/reference/snapshot-backtest.md#configurable-trading-rules), which defines fee schedules, price-limit markers, and model boundaries.
 
-Use the actual exchange calendar, including holidays and early closes. Pass timezone-aware `close_times` for each session using `ZoneInfo("America/New_York")`, with actual local closing times so daylight-saving changes are represented. Supply later decision `cutoffs` only when the strategy needs them.
+Supply the actual US exchange session calendar—including market holidays and early closes—and pass timezone-aware `close_times` using `ZoneInfo("America/New_York")` at each session's true local close so daylight-saving transitions are represented accurately. Provide separate decision `cutoffs` only when strategy observation times occur after the market close.
 
 ## Import a CSV, Parquet file or another API into a backtest
 
-Write a Python loader that translates the vendor’s records into `trademaster.backtest` types, then calls `Snapshot.create` once. The strategy can open the resulting directory just like a TuShare snapshot. The [full-A Parquet importer](../../../specs/examples/prepare_all_a_snapshot.py) is a working example.
+Write a Python loader that maps vendor records into `trademaster.backtest` domain records and calls `Snapshot.create` once; strategies then open the published directory identically to a Tushare snapshot. Refer to the [full-A Parquet importer](../../../specs/examples/prepare_all_a_snapshot.py) for a complete production loader.
 
 | Snapshot input | What to map |
 |---|---|
-| `sessions`, `next_session` | Supply unique trading dates in order and the actual next trading date after the sample. The calendar includes market sessions on which an individual stock was suspended. |
-| `close_times`, `cutoffs` | Map each session to its actual timezone-aware close and decision time. |
-| `Instrument` | Use a stable ID across all tables and the SDK’s lowercase venue code, as in `Instrument("600036.SH", venue="sse")`. Map the lot size, price tick, settlement and historical listing interval. `delisted_on` is the first date outside the investable universe. |
-| `DailyPrice` | Supply unadjusted open and close for fills and valuation; put the adjusted signal price in `adjusted_close`. Explicitly set `buy_at_open` or `sell_at_open` to `"unknown"` when the source does not establish that side's status. Record evidence for known permissions and a reason for each block. Follow the [opening-evidence contract](../../../docs/reference/snapshot-backtest.md#missing-prices-and-opening-evidence). |
-| `Feature` and `CashDividend` | Give each feature its actual timezone-aware `available_at` and version. Map supported distributions under the [cash-dividend contract](../../../docs/reference/snapshot-backtest.md#cash-dividends). Preserve source dates and flag unsupported corporate actions with `DailyPrice.corporate_action_gap`. |
-| `source_evidence` | Record the source identifier and file hashes or API extract version so the same input can be recovered. |
+| `sessions`, `next_session` | Unique trading dates in ascending order plus the first actual trading session after the sample window (including market sessions on which individual instruments were halted). |
+| `close_times`, `cutoffs` | Each session's timezone-aware market close and point-in-time decision cutoff. |
+| `Instrument` | A stable `instrument_id` across all tables paired with the SDK's lowercase venue code (e.g., `Instrument("600036.SH", venue="sse")`), lot size, tick size, settlement policy, and listing window (`delisted_on` marks the first date outside the investable universe). |
+| `DailyPrice` | Unadjusted `open` and `close` prices for execution and ledger valuation, plus `adjusted_close` for split/dividend-adjusted signals. Explicitly set `buy_at_open` or `sell_at_open` to `"unknown"` whenever the source does not establish opening tradability, attach `evidence` for confirmed permissions, and supply a block reason per the [opening-evidence contract](../../../docs/reference/snapshot-backtest.md#missing-prices-and-opening-evidence). |
+| `Feature` and `CashDividend` | Each feature's timezone-aware `available_at` timestamp and version string; supported cash distributions mapped under the [cash-dividend contract](../../../docs/reference/snapshot-backtest.md#cash-dividends) with unmodified source dates; and `DailyPrice.corporate_action_gap=True` on sessions affected by unsupported splits or corporate actions. |
+| `source_evidence` | Source identifiers alongside input file SHA-256 digests or API extract versions so the exact upstream inputs remain auditable. |
 
-Once the vendor records are mapped to these types, publish them with the public SDK.
+Once vendor rows are converted into typed records, publish the verified data snapshot:
 
 ```python
 from trademaster.backtest import Snapshot
@@ -38,10 +38,10 @@ market = Snapshot.create(
 )
 ```
 
-Test the loader with a small vendor fixture. Reopen the snapshot, check when a feature first becomes visible, and compare a blocked order and the next eligible fill with the source rows. Use a confirmed suspension and a missing status as separate cases. [Snapshot contract](../../../docs/reference/snapshot-backtest.md#market-inputs-and-decision-timing) · [Importer tests](../../../tests/test_prepare_all_a_snapshot.py)
+Validate the loader against a compact vendor fixture: reopen the published snapshot, check the earliest session on which a feature becomes observable, and verify a blocked opening order alongside its subsequent eligible fill against raw vendor rows—testing a confirmed suspension separately from an `"unknown"` missing status. [Snapshot contract](../../../docs/reference/snapshot-backtest.md#market-inputs-and-decision-timing) · [Importer tests](../../../tests/test_prepare_all_a_snapshot.py)
 
 ## Add a provider for cached point-in-time queries
 
-Use this path when researchers also need `ensure(request)` and `query(request, as_of=...)` across datasets. Implement `CanonicalDataProvider.fetch(request, *, coverage_keys, page_token) -> ProviderPage` and pass the instance as `provider=` to `CacheFirstDataPortal`. The bundled `TushareProvider.from_environment` and the test provider show the two sides of this interface. [Provider contract](../../../python/trademaster/data/coverage.py) · [TuShare implementation](../../../python/trademaster/data/tushare_provider.py) · [Portal tests](../../../tests/test_coverage_portal.py)
+When research workflows require `ensure(request)` and `query(request, as_of=...)` across catalogued datasets, implement `CanonicalDataProvider.fetch(request, *, coverage_keys, page_token) -> ProviderPage` and pass it as `provider=` to `CacheFirstDataPortal`. Compare `TushareProvider.from_environment` and the offline test provider for concrete reference implementations. [Provider contract](../../../python/trademaster/data/coverage.py) · [Tushare implementation](../../../python/trademaster/data/tushare_provider.py) · [Portal tests](../../../tests/test_coverage_portal.py)
 
-Map vendor rows to the dataset’s registered Arrow schema. Return the partition key, exact covered keys and next page token with each page. For trusted independent imports, use a separate data root and set `canonical_source_policy="trusted_imports"` on `DataConfig`. The default stock and ETF policy verifies TuShare raw and staging records. Test pagination, cached reads and publication cutoffs with a local provider fixture. [Data configuration and provenance](../../../docs/reference/data-and-research.md) · [Data contribution guide](../../../python/trademaster/data/AGENTS.md)
+Normalize vendor rows to each dataset's registered Arrow schema and return the partition key, exact covered keys, and next page token on every `ProviderPage`. When importing trusted non-Tushare datasets, use a dedicated data root with `canonical_source_policy="trusted_imports"` on `DataConfig` (the default `tushare_only` policy verifies full Tushare raw-to-staging lineage). Exercise multi-page cursors, cached re-reads, and as-of publication cutoffs with a deterministic local fixture. [Data configuration and provenance](../../../docs/reference/data-and-research.md) · [Data contribution guide](../../../python/trademaster/data/AGENTS.md)

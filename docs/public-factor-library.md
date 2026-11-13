@@ -1,77 +1,75 @@
 # A-share public factor catalog
 
-TradeMaster catalogs factors disclosed in the Huatai Securities research series and Guotai Junan (GTJA) Alpha191. A `FactorCandidateRecord` lists the source, formula reference, inputs, licensing, local implementation and any data or formula questions still open. Once a local implementation matches its reference examples, a `FactorDefinition` can produce factor values in Parquet.
+How does TradeMaster incorporate published broker factor libraries without letting ambiguous operator definitions, missing point-in-time (PIT) inputs, or proprietary report licensing slip into production backtests? Every formula disclosed in the Huatai Securities multi-factor series and Guotai Junan (GTJA) Alpha191 enters the repository first as a content-addressed `FactorCandidateRecord`—recording its source publication, `metadata-only` licensing terms, typed input dependencies, and open data or semantic blockers. Only candidates whose local implementations match pinned reference outputs can link to an executable `FactorDefinition` and emit Parquet values.
 
-The built-in catalog contains **8 sources, 7 collections and 460 candidates**. The first 11 executable definitions from these collections are `huatai53.size.log_total_market_value@1` and `gtja191.alpha{014,015,018,020,031,034,046,053,058,088}@1`. Seven existing fundamental definitions resemble Huatai 53 concepts but differ from the published definitions. Five already had inputs in the strategy cache. The other two measure single-quarter growth. All seven are classified as `implemented_variant`.
+The built-in catalog indexes **8 sources, 7 collections, and 460 candidates**. Eleven reviewed candidates currently run as managed definitions—`huatai53.size.log_total_market_value@1` and `gtja191.alpha{014,015,018,020,031,034,046,053,058,088}@1`—while seven pre-existing fundamental definitions (five backed by fields in the legacy ten-year strategy cache and two measuring single-quarter growth) are explicitly tagged `implemented_variant` to document where they depart from Huatai's published formulas.
 
 ## Collections
 
 | Collection | Candidates | Coverage or outstanding requirement |
 | --- | ---: | --- |
-| Huatai 2020 style factors (nine categories) | 53 | Formula and dependencies for every factor. Input coverage splits into the 14/36/3 groups below. |
-| Huatai fund flows | 50 | `blocked_data` pending Wind order size, aggressor direction and intraday time segments. |
-| Huatai financial quality | 51 | Registered. Requires typed statement line items, announcement dates and a PIT revision policy. |
+| Huatai 2020 style factors (nine categories) | 53 | Complete formula and dependency metadata; input readiness splits into the 14 / 36 / 3 groups below. |
+| Huatai fund flows | 50 | `blocked_data` pending Wind order-size tiers, aggressor direction, and intraday session slices. |
+| Huatai financial quality | 51 | Cataloged; promotion requires typed statement line items, announcement timestamps, and a PIT restatement policy. |
 | Huatai analyst consensus | 19 | `blocked_data` pending licensed historical consensus snapshots. |
-| Huatai historical percentiles | 86 | The published parameter table shows 86 combinations. The catalog also preserves the report summary's `reported_count=89`. |
-| Huatai structural risk model | 10 | `risk_model_only`. These exposures are for risk modeling and attribution. |
-| Guotai Junan Alpha191 | 191 | Continuous IDs 1–191. Each entry records its DolphinDB input list and review status. |
+| Huatai historical percentiles | 86 | 86 parameter combinations enumerated in the published table (preserving the report summary's `reported_count=89` in metadata). |
+| Huatai structural risk model | 10 | `risk_model_only`; factor exposures intended for risk modeling and return attribution rather than standalone alpha ranking. |
+| Guotai Junan Alpha191 | 191 | Continuous IDs `1–191`, each recording its verified DolphinDB input signature and semantic review state. |
 
-Huatai's large-scale technical-factor study replicates WorldQuant Alpha101 on A-shares. The catalog counts that formula set once.
+Huatai's separate technical-factor survey replicates WorldQuant Alpha101 on A-shares and is counted once in the catalog.
 
 ## Huatai 53 data requirements
 
 | Input category | Count | Factors |
 | --- | ---: | --- |
-| Fields present in the ten-year strategy cache | 14 | EP, BP, DP, ROE_q, grossprofitmargin_q, size, four returns and four standard deviations. |
-| Available by extending Tushare ingestion and defining canonical fields/PIT derivations | 36 | Remaining valuation, growth, quality and leverage factors, eight turnover-weighted returns, and four turnover measures. |
-| Benchmark and regression conventions required | 3 | beta, HAlpha, resvol. |
+| Present in the legacy ten-year strategy cache | 14 | `EP`, `BP`, `DP`, `ROE_q`, `grossprofitmargin_q`, `size`, four return horizons, and four return volatilities. |
+| Available by extending Tushare ingestion and canonical PIT derivations | 36 | Remaining valuation, growth, quality, and leverage ratios, eight turnover-weighted returns, and four turnover factors. |
+| Requires explicit benchmark and regression contracts | 3 | `beta`, `HAlpha`, and `resvol`. |
 
-The original strategy cache covered 446 previously selected stocks over ten years and 20 semiannual fundamental snapshots. It served to check formulas. The [full-universe study](full-a-factor-research.md) uses historical listings to estimate A-share IC.
+Whereas the legacy ten-year strategy cache (446 selected stocks across 20 semiannual snapshots) served only for formula verification, unbiased A-share IC estimation requires the [20-year full-universe PIT panel](full-a-factor-research.md). Six definitional differences separate TradeMaster's pre-existing `implemented_variant` fundamentals from Huatai 53:
 
-The local and published definitions differ in units, denominators and reporting periods.
-
-- Huatai defines `EP=1/pe_ttm` without a positive-PE filter. Local `fundamental.earnings_yield@1` removes negative PE.
-- Tushare `dv_ttm` is a percentage. Divide by 100 to use a ratio as the raw Huatai DP exposure.
-- Local `q_sales_yoy/q_profit_yoy` measures year-on-year change in one quarter. Huatai's `Sales_G_q/Profit_G_q` uses the most recently disclosed year-to-date period.
-- Huatai `operationcashflowratio` divides operating cash flow by net profit. Local `ocf_to_or` divides it by operating revenue.
-- Local `debt_to_assets` differs from all five Huatai 53 leverage definitions.
-- Huatai used historical CITIC industries. Grouping past observations with a current SW2021 map instead assigns some stocks to an industry they joined later.
+- **Earnings yield (`EP`):** Huatai defines `EP = 1 / pe_ttm` across all observations, whereas `fundamental.earnings_yield@1` filters out non-positive PE ratios.
+- **Dividend yield (`DP`):** Tushare reports `dv_ttm` in percentage points; matching Huatai's raw decimal ratio requires dividing by 100.
+- **Quarterly growth (`Sales_G_q` / `Profit_G_q`):** Local `q_sales_yoy` and `q_profit_yoy` measure single-quarter year-on-year growth, whereas Huatai uses the latest disclosed year-to-date period.
+- **Operating cash flow ratio:** Huatai's `operationcashflowratio` divides operating cash flow by net profit; local `ocf_to_or` divides by operating revenue.
+- **Leverage:** Local `debt_to_assets` does not match any of the five leverage definitions in Huatai 53.
+- **Industry neutralization:** Huatai grouped stocks by historical CITIC industry; applying a static contemporary SW2021 map to past dates introduces look-ahead industry reassignment.
 
 ## GTJA Alpha191 data requirements
 
-The catalog checked the input signatures of Alpha001–Alpha191 at a pinned DolphinDB commit.
+Input signatures for `Alpha001`–`Alpha191` were audited against a pinned Apache-2.0 DolphinDB reference commit:
 
 | Input category | Count | Coverage |
 | --- | ---: | --- |
-| Constructible from OHLCV and adjustment factors in the strategy cache | 146 | The required raw fields exist for the 446-stock union. |
-| VWAP derivable from available fields | 40 | `vwap_cny_per_share = amount * 10 / volume`, using the same adjustment scale as OHLC. |
-| Need the index series used in the study | 4 | Alpha075, 149, 181 and 182. |
-| Factor-return series required | 1 | Alpha030 also requires MKT, SMB and HML. The reference README's abbreviated input table omits these three series. |
+| Directly constructible from cached OHLCV and `adj_factor` | 146 | All required raw fields already exist in the 446-stock union cache. |
+| Derivable once VWAP is defined | 40 | `vwap_cny_per_share = amount * 10 / volume`, scaled by the same adjustment factor as OHLC. |
+| Requires benchmark index series | 4 | `Alpha075`, `149`, `181`, and `182`. |
+| Requires Fama-French factor-return series | 1 | `Alpha030` consumes `MKT`, `SMB`, and `HML` (omitted from the upstream DolphinDB README summary table). |
 
-For the remaining formulas, `blocked_semantics` records an open interpretation question. Each needs a parsed source formula (AST), approved corrections, versioned operator definitions and a reference example. Outstanding questions include the regression alignment in Alpha021, WMA in 027, FF3 in 030, recursive `SELF` in 143, `SUMAC` and parentheses in 165/183, dimensions and parentheses in 181, and damaged PDF typesetting in 190.
+Formulas with unresolved operator or typesetting ambiguities remain gated under `blocked_semantics` until each carries a parsed source AST, approved errata, versioned operator semantics, and golden test vectors—covering regression window alignment in `Alpha021`, `WMA` weighting in `027`, three-factor regression inputs in `030`, recursive `SELF` state in `143`, `SUMAC` and parenthesis placement in `165`/`183`, dimensional mismatches and parentheses in `181`, and garbled PDF typesetting in `190`.
 
-The ten implemented formulas use open and close prices. They need no RANK, SMA, VWAP, benchmark, regression or recursive operators. Each reads `daily_bars.open/close` and `adj_factors.adj_factor` and calculates `hfq_price = raw_price * adj_factor` under `gtja-reviewed-price/v1`. A vendor’s `adjusted_close` can follow a different adjustment convention. Alpha014 uses units of `hfq_price_difference`. Ratio and percentage factors carry their respective units. The library records direction as 0 for all ten. Their empirical direction is measured in the evaluation.
+The ten promoted GTJA definitions (`alpha014/015/018/020/031/034/046/053/058/088@1`) depend exclusively on `daily_bars.open/close` and `adj_factors.adj_factor`—requiring no `RANK`, `SMA`, `VWAP`, benchmark, regression, or recursive operators. Rather than trusting vendor-specific `adjusted_close` conventions, each formula computes `hfq_price = raw_price * adj_factor` under the `gtja-reviewed-price/v1` price contract, assigns explicit output units (`hfq_price_difference` for `Alpha014`, alongside dimensionless ratios and percentages), and fixes ex-ante `direction = 0` so empirical signs are measured out-of-the-box during evaluation.
 
 ## Catalog status
 
 | Field or value | Meaning |
 | --- | --- |
-| `implementation_status=implemented` | A corresponding `factor_id@version` can enter the managed registry. |
-| `implemented_variant` | A local approximation exists and the record documents each known difference. |
-| `ready` | Formula and inputs are understood. Implementation is pending. |
-| `blocked_data` | Data, typed contracts or PIT evidence are missing. |
-| `blocked_semantics` | Operators, parentheses, regression, recursion or proposed corrections remain unresolved. |
-| `risk_model_only` | Risk exposure or attribution specification. |
-| `data_availability=current_cache_partial` | The fields exist locally, with incomplete A-share coverage. |
-| `derived_from_current` | Deterministically derivable from existing fields, e.g. Tushare VWAP. |
-| `provider_extension` | Tushare offers fields or line items, but formal schemas or historical coverage remain incomplete. |
-| `benchmark_contract_required` | Index identity, price conventions and regression policy must be defined. |
+| `implementation_status=implemented` | Verified against reference examples; a linked `factor_id@version` is registered in the managed catalog. |
+| `implemented_variant` | A related local definition exists, with every formula or unit divergence documented on the candidate record. |
+| `ready` | Formula semantics and data contracts are resolved; implementation is pending. |
+| `blocked_data` | Required market/fundamental series, typed schemas, or PIT timestamps are unavailable. |
+| `blocked_semantics` | Operator conventions, parenthesis placement, regression specs, recursion, or PDF errata remain open. |
+| `risk_model_only` | Structural risk-model exposure or attribution factor, excluded from standalone alpha materialization. |
+| `data_availability=current_cache_partial` | Required columns exist locally for a subset of stocks rather than the full historical A-share universe. |
+| `derived_from_current` | Deterministically computable from existing fields (such as Tushare `VWAP`). |
+| `provider_extension` | Available from Tushare endpoints, pending formal M1 schema contracts and historical coverage audits. |
+| `benchmark_contract_required` | Requires a pinned benchmark index ID, return convention, and rolling regression specification. |
 
-`distribution_status=metadata-only` limits distribution to references and catalog metadata. The broker reports retain their original licenses. TradeMaster checks expected values against a specific Apache-2.0 DolphinDB revision and runs the resulting definitions locally.
+Setting `distribution_status=metadata-only` restricts repository redistribution to bibliographic citations and structured dependency metadata while original broker publications retain their copyrights; TradeMaster validates numerical parity against the pinned Apache-2.0 DolphinDB revision and executes its own clean-room implementations locally.
 
 ## Store and query the catalog
 
-Each catalog record lives in a JSON file named by its content hash. DuckDB indexes those records for search.
+Catalog records are stored as immutable, content-addressed JSON files and indexed in DuckDB for fast filtering:
 
 ```text
 <factor-root>/library/
@@ -82,9 +80,9 @@ Each catalog record lives in a JSON file named by its content hash. DuckDB index
   candidates/<candidate_id>/<record_sha>.json
 ```
 
-`manifest.json` enumerates every source, collection and candidate, including its path and hash. On load, TradeMaster reads this list and checks file hashes, DuckDB entries, dependency indexes and linked factor definitions. It reports an error if a record is missing, has changed, or shares an ID with a different record.
+`manifest.json` lists every source, collection, and candidate alongside its relative path and SHA-256 digest. Whenever the library opens, TradeMaster cross-checks file hashes, DuckDB rows, dependency indexes, and linked `FactorDefinition` entries—raising an error immediately if any record is missing, modified, or collides on an identifier.
 
-Replace `<factor-root>` in these commands with the factor store directory.
+Substitute your factor store directory for `<factor-root>` to sync and query the catalog:
 
 ```bash
 tm-factor --root <factor-root> library-sync
@@ -99,12 +97,12 @@ tm-factor --root <factor-root> library-list \
 tm-factor --root <factor-root> library-describe huatai53.value.ep
 ```
 
-`library-list` returns stable IDs and status for the selected subset of the 460 records. `library-describe` returns the formula reference, inputs, blockers, variant differences and content hash for one candidate.
+`library-list` filters the 460 candidates by collection, review status, data availability, or column dependency, while `library-describe` prints a single candidate's citation, input contract, open blockers, variant notes, and content hash.
 
 ## Requirements for promoting more candidates
 
-1. Add `pe_ttm/pb/ps_ttm/dv_ttm` and typed PIT financial indicators to the formal M1 schema.
-2. Provide a research view with adjusted OHLCV/VWAP. Keep raw execution prices in the execution layer.
-3. Version the rolling, rank, correlation, regression, SMA and decay operator conventions.
-4. Retain the source AST, approved AST, errata and golden cases for each candidate.
-5. Establish full-universe historical daily bars, daily turnover, stock states and industry membership before assessing IC or quantile returns on an unbiased sample.
+1. Extend the formal M1 data schema with `pe_ttm`, `pb`, `ps_ttm`, `dv_ttm`, and typed PIT financial-statement line items.
+2. Expose a dedicated research view with back-adjusted OHLCV and VWAP while keeping raw unadjusted prices in the execution engine.
+3. Version canonical operator contracts for rolling windows, cross-sectional ranks, correlations, OLS regressions, `SMA`, and linear decay.
+4. Persist the raw source AST, reviewed AST, approved errata, and golden reference vectors alongside every promoted candidate.
+5. Verify full-universe historical bars, turnover, trading states, and PIT industry intervals before interpreting IC or quantile spreads on an unbiased A-share sample.
