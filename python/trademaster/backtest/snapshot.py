@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import filecmp
 import hashlib
 import itertools
 import json
@@ -9,7 +10,7 @@ import math
 import os
 from bisect import bisect_left, bisect_right
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta, timezone
 from decimal import Decimal
@@ -17,7 +18,7 @@ from functools import cached_property
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, Self, cast
 
 import numpy as np
 import numpy.typing as npt
@@ -41,6 +42,8 @@ _FEATURE_FIELDS: list[tuple[str, pa.DataType]] = [
     ("value", pa.float64()),
 ]
 _FEATURES = pa.schema(_FEATURE_FIELDS)
+# pq.write_table's default row-group size; SnapshotWriter cuts row groups at the same rows.
+_FEATURE_ROW_GROUP = 1024 * 1024
 
 
 def scaled(value: Amount, label: str) -> int:
@@ -76,13 +79,6 @@ def _publish(path: Path, payload: bytes) -> None:
                     raise ValueError(f"snapshot already exists with different contents: {path}")
         finally:
             temporary.unlink(missing_ok=True)
-
-
-def _object(root: Path, label: str, extension: str, payload: bytes) -> dict[str, str]:
-    digest = hashlib.sha256(payload).hexdigest()
-    name = f"{label}-{digest}.{extension}"
-    _publish(root / name, payload)
-    return {"file": name, "sha256": digest}
 
 
 def _verified(root: Path, descriptor: dict[str, str]) -> tuple[Path, bytes]:
@@ -129,6 +125,155 @@ def _adjusted_grid(
         raise ValueError(f"adjusted close outside listing interval: {location}")
     grid[rows, cols] = table["value"].to_numpy(zero_copy_only=False)
     return grid
+
+
+class _HashingWriter:
+    """Temporary market JSON file in the snapshot directory, hashed as it is written."""
+
+    def __init__(self, root: Path) -> None:
+        self._stream = NamedTemporaryFile(dir=root, prefix=".market-", delete=False)  # noqa: SIM115
+        self.path = Path(self._stream.name)
+        self._digest = hashlib.sha256()
+
+    def write(self, payload: bytes) -> None:
+        self._digest.update(payload)
+        self._stream.write(payload)
+
+    def finish(self) -> tuple[Path, str]:
+        self._stream.close()
+        return self.path, self._digest.hexdigest()
+
+    def discard(self) -> None:
+        self._stream.close()
+        self.path.unlink(missing_ok=True)
+
+
+def _publish_file(
+    root: Path, label: str, extension: str, temporary: Path, digest: str
+) -> dict[str, str]:
+    """Link a finished temporary file under its content-addressed name without overwriting."""
+    name = f"{label}-{digest}.{extension}"
+    path = root / name
+    try:
+        try:
+            os.link(temporary, path)
+        except FileExistsError:
+            if not filecmp.cmp(temporary, path, shallow=False):
+                raise ValueError(f"snapshot already exists with different contents: {path}")
+    finally:
+        temporary.unlink(missing_ok=True)
+    return {"file": name, "sha256": digest}
+
+
+def _explicit_features(features: Sequence[Feature], names: set[str]) -> list[dict[str, Any]]:
+    research = []
+    versions: dict[str, str] = {}
+    seen: set[tuple[str, str, datetime]] = set()
+    for obs in sorted(
+        features, key=lambda f: (f.name, f.instrument_id, f.available_at.isoformat())
+    ):
+        if (
+            obs.instrument_id not in names
+            or not obs.name
+            or not obs.version
+            or obs.name == _ADJUSTED
+            or obs.available_at.utcoffset() is None
+        ):
+            raise ValueError(
+                "feature requires a known instrument, name, version and publication time"
+            )
+        key = (obs.name, obs.instrument_id, obs.available_at)
+        if key in seen or versions.setdefault(obs.name, obs.version) != obs.version:
+            raise ValueError("duplicate feature observation or mixed versions")
+        seen.add(key)
+        research.append(
+            {
+                "instrument_id": obs.instrument_id,
+                "name": obs.name,
+                "version": obs.version,
+                "available_at": obs.available_at,
+                "value": obs.value,
+            }
+        )
+    return research
+
+
+def _cash_dividend_actions(
+    cash_dividends: Sequence[CashDividend],
+    names: set[str],
+    times: Mapping[date, datetime],
+    next_session: date,
+) -> list[dict[str, Any]]:
+    actions = []
+    action_keys: set[tuple[date, str]] = set()
+    for div in sorted(cash_dividends, key=lambda d: (d.ex_session, d.instrument_id)):
+        action_key = (div.ex_session, div.instrument_id)
+        amount = scaled(div.amount_per_share, "cash dividend per share")
+        if not div.record_session < div.ex_session <= div.pay_session:
+            raise ValueError("cash dividend needs record_session < ex_session <= pay_session")
+        if (
+            not amount
+            or action_key in action_keys
+            or div.instrument_id not in names
+            or div.record_session not in times
+            or any(d < next_session and d not in times for d in (div.ex_session, div.pay_session))
+        ):
+            raise ValueError("invalid or duplicate cash dividend")
+        action_keys.add(action_key)
+        actions.append(
+            {
+                "instrument_id": div.instrument_id,
+                "record_session": div.record_session.isoformat(),
+                "ex_session": div.ex_session.isoformat(),
+                "pay_session": div.pay_session.isoformat(),
+                "amount_per_share": amount,
+            }
+        )
+    return actions
+
+
+def _daily_record(row: DailyPrice, listing: tuple[date | None, date | None]) -> dict[str, Any]:
+    """Validate one daily row and return its canonical market record."""
+    key = (row.session, row.instrument_id)
+    if not _listed(row.session, listing) and (
+        any(p is not None for p in (row.open, row.close, row.adjusted_close))
+        or "yes" in (row.buy_at_open, row.sell_at_open)
+    ):
+        raise ValueError(f"price or opening permission outside listing interval: {key}")
+    if row.buy_at_open not in ("yes", "no", "unknown") or row.sell_at_open not in (
+        "yes",
+        "no",
+        "unknown",
+    ):
+        raise ValueError("invalid opening permission")
+    if not row.evidence and (row.buy_at_open != "unknown" or row.sell_at_open != "unknown"):
+        raise ValueError("known opening permissions require evidence")
+    markers = (
+        (row.buy_blocked_by_price_limit, row.buy_at_open),
+        (row.sell_blocked_by_price_limit, row.sell_at_open),
+    )
+    if any(type(marker) is not bool for marker, _ in markers):
+        raise ValueError("price-limit markers must be booleans")
+    if any(marker and permission != "no" for marker, permission in markers):
+        raise ValueError("price-limit markers require a known blocked opening permission")
+    prices = [scaled(x, "price") if x is not None else None for x in (row.open, row.close)]
+    if 0 in prices:
+        raise ValueError("raw prices must be positive")
+    return {
+        "session": row.session.isoformat(),
+        "instrument_id": row.instrument_id,
+        "open": prices[0],
+        "close": prices[1],
+        "buy_at_open": row.buy_at_open,
+        "sell_at_open": row.sell_at_open,
+        "buy_reason": row.buy_reason,
+        "sell_reason": row.sell_reason,
+        "evidence": row.evidence,
+        "suspended": row.suspended,
+        "corporate_action_gap": row.corporate_action_gap,
+        **({"buy_blocked_by_price_limit": True} if row.buy_blocked_by_price_limit else {}),
+        **({"sell_blocked_by_price_limit": True} if row.sell_blocked_by_price_limit else {}),
+    }
 
 
 def _history_tuple(values: npt.NDArray[np.float64]) -> tuple[float | None, ...]:
@@ -328,193 +473,20 @@ class Snapshot:
         a later cutoff is provided for that local session. Features use their own
         publication timestamps.
         """
-        days = list(sessions)
-        if not days or days != sorted(set(days)) or next_session <= days[-1]:
-            raise ValueError("provide unique, ordered trading sessions and the following session")
-        closes = (
-            dict(close_times)
-            if close_times is not None
-            else {d: datetime.combine(d, time(15), timezone(timedelta(hours=8))) for d in days}
+        writer = SnapshotWriter(
+            directory,
+            sessions=sessions,
+            next_session=next_session,
+            instruments=instruments,
+            features=features,
+            cash_dividends=cash_dividends,
+            close_times=close_times,
+            cutoffs=cutoffs,
+            source_evidence=source_evidence,
         )
-        times = dict(cutoffs) if cutoffs is not None else closes
-        _validate_clock(days, closes, times)
-        instruments = sorted(instruments, key=lambda item: item.instrument_id)
-        names = {s.instrument_id for s in instruments}
-        if len(names) != len(instruments) or not names or "" in names:
-            raise ValueError("provide unique, nonempty instrument IDs")
-        specs = []
-        listings = {}
-        for item in instruments:
-            if item.listed_on and item.delisted_on and item.listed_on >= item.delisted_on:
-                raise ValueError("listing interval is empty")
-            if item.buy_lot_size < 1 or not scaled(item.tick_size, "tick size"):
-                raise ValueError("positive tick and lot sizes are required")
-            specs.append(
-                {
-                    "instrument_id": item.instrument_id,
-                    "asset_class": item.asset_class,
-                    "venue": item.venue,
-                    "currency": item.currency,
-                    "buy_lot_size": item.buy_lot_size,
-                    "tick_size": scaled(item.tick_size, "tick size"),
-                    "settlement": item.settlement,
-                }
-            )
-            listings[item.instrument_id] = (item.listed_on, item.delisted_on)
-        rows = []
-        research = []
-        versions: dict[str, str] = {}
-        seen: set[tuple[str, str, datetime]] = set()
-        for obs in sorted(
-            features, key=lambda f: (f.name, f.instrument_id, f.available_at.isoformat())
-        ):
-            if (
-                obs.instrument_id not in names
-                or not obs.name
-                or not obs.version
-                or obs.name == _ADJUSTED
-                or obs.available_at.utcoffset() is None
-            ):
-                raise ValueError(
-                    "feature requires a known instrument, name, version and publication time"
-                )
-            key = (obs.name, obs.instrument_id, obs.available_at)
-            if key in seen or versions.setdefault(obs.name, obs.version) != obs.version:
-                raise ValueError("duplicate feature observation or mixed versions")
-            seen.add(key)
-            research.append(
-                {
-                    "instrument_id": obs.instrument_id,
-                    "name": obs.name,
-                    "version": obs.version,
-                    "available_at": obs.available_at,
-                    "value": obs.value,
-                }
-            )
-        row_keys: set[tuple[date, str]] = set()
-        for row in sorted(daily, key=lambda r: (r.session, r.instrument_id)):
-            key2 = (row.session, row.instrument_id)
-            if row.instrument_id not in names or row.session not in times or key2 in row_keys:
-                raise ValueError(f"unknown or duplicate daily row: {key2}")
-            row_keys.add(key2)
-            if not _listed(row.session, listings[row.instrument_id]) and (
-                any(p is not None for p in (row.open, row.close, row.adjusted_close))
-                or "yes" in (row.buy_at_open, row.sell_at_open)
-            ):
-                raise ValueError(f"price or opening permission outside listing interval: {key2}")
-            if row.buy_at_open not in ("yes", "no", "unknown") or row.sell_at_open not in (
-                "yes",
-                "no",
-                "unknown",
-            ):
-                raise ValueError("invalid opening permission")
-            if not row.evidence and (row.buy_at_open != "unknown" or row.sell_at_open != "unknown"):
-                raise ValueError("known opening permissions require evidence")
-            markers = (
-                (row.buy_blocked_by_price_limit, row.buy_at_open),
-                (row.sell_blocked_by_price_limit, row.sell_at_open),
-            )
-            if any(type(marker) is not bool for marker, _ in markers):
-                raise ValueError("price-limit markers must be booleans")
-            if any(marker and permission != "no" for marker, permission in markers):
-                raise ValueError("price-limit markers require a known blocked opening permission")
-            prices = [scaled(x, "price") if x is not None else None for x in (row.open, row.close)]
-            if 0 in prices:
-                raise ValueError("raw prices must be positive")
-            rows.append(
-                {
-                    "session": row.session.isoformat(),
-                    "instrument_id": row.instrument_id,
-                    "open": prices[0],
-                    "close": prices[1],
-                    "buy_at_open": row.buy_at_open,
-                    "sell_at_open": row.sell_at_open,
-                    "buy_reason": row.buy_reason,
-                    "sell_reason": row.sell_reason,
-                    "evidence": row.evidence,
-                    "suspended": row.suspended,
-                    "corporate_action_gap": row.corporate_action_gap,
-                    **(
-                        {"buy_blocked_by_price_limit": True}
-                        if row.buy_blocked_by_price_limit
-                        else {}
-                    ),
-                    **(
-                        {"sell_blocked_by_price_limit": True}
-                        if row.sell_blocked_by_price_limit
-                        else {}
-                    ),
-                }
-            )
-            if row.adjusted_close is not None:
-                if not math.isfinite(row.adjusted_close) or row.adjusted_close <= 0:
-                    raise ValueError("adjusted close must be positive and finite")
-                research.append(
-                    {
-                        "instrument_id": row.instrument_id,
-                        "name": _ADJUSTED,
-                        "version": "1",
-                        "available_at": closes[row.session],
-                        "value": row.adjusted_close,
-                    }
-                )
-        market = {
-            "sessions": [d.isoformat() for d in days],
-            "next_session": next_session.isoformat(),
-            "instruments": specs,
-            "rows": rows,
-        }
-        if cash_dividends:
-            actions = []
-            action_keys: set[tuple[date, str]] = set()
-            for div in sorted(cash_dividends, key=lambda d: (d.ex_session, d.instrument_id)):
-                action_key = (div.ex_session, div.instrument_id)
-                amount = scaled(div.amount_per_share, "cash dividend per share")
-                if not div.record_session < div.ex_session <= div.pay_session:
-                    raise ValueError(
-                        "cash dividend needs record_session < ex_session <= pay_session"
-                    )
-                if (
-                    not amount
-                    or action_key in action_keys
-                    or div.instrument_id not in names
-                    or div.record_session not in times
-                    or any(
-                        d < next_session and d not in times
-                        for d in (div.ex_session, div.pay_session)
-                    )
-                ):
-                    raise ValueError("invalid or duplicate cash dividend")
-                action_keys.add(action_key)
-                actions.append(
-                    {
-                        "instrument_id": div.instrument_id,
-                        "record_session": div.record_session.isoformat(),
-                        "ex_session": div.ex_session.isoformat(),
-                        "pay_session": div.pay_session.isoformat(),
-                        "amount_per_share": amount,
-                    }
-                )
-            market["cash_dividends"] = actions
-        root = Path(directory).resolve()
-        root.mkdir(parents=True, exist_ok=True)
-        output = pa.BufferOutputStream()
-        pq.write_table(pa.Table.from_pylist(research, schema=_FEATURES), output)
-        manifest: dict[str, Any] = {
-            "schema_id": "trademaster.daily-snapshot/v1",
-            "market": _object(root, "market", "json", canonical(market)),
-            "features": _object(root, "features", "parquet", output.getvalue().to_pybytes()),
-            "close_times": {d.isoformat(): closes[d].isoformat() for d in days},
-            "cutoffs": {d.isoformat(): times[d].astimezone(UTC).isoformat() for d in days},
-            "listing": {
-                s: [d.isoformat() if d else None for d in interval]
-                for s, interval in listings.items()
-            },
-            "source_evidence": dict(source_evidence or {}),
-        }
-        manifest["snapshot_id"] = hashlib.sha256(canonical(manifest)).hexdigest()
-        _publish(root / "manifest.json", canonical(manifest))
-        return cls.open(root)
+        with writer:
+            writer.add(sorted(daily, key=lambda r: (r.session, r.instrument_id)))
+        return writer.snapshot
 
     @classmethod
     def open(cls, directory: str | Path, *, history_cache: bool = True) -> Snapshot:
@@ -669,3 +641,206 @@ class Snapshot:
         )
 
     load = open
+
+
+class SnapshotWriter:
+    """Publish a data snapshot from daily rows streamed in ``(session, instrument_id)`` order.
+
+    Produces files byte-identical to ``Snapshot.create`` (which delegates here) while holding
+    only one Parquet row group of features in memory. Instruments, cash dividends and explicit
+    features are supplied up front because they precede the daily rows in both published
+    objects. Use as a context manager: a clean exit publishes the manifest and records
+    ``writer.snapshot_id``; an exception removes every partial file. ``writer.snapshot`` opens
+    the published snapshot on first access, so producers that only publish never load it.
+    """
+
+    def __init__(
+        self,
+        directory: str | Path,
+        *,
+        sessions: Sequence[date],
+        next_session: date,
+        instruments: Sequence[Instrument],
+        features: Sequence[Feature] = (),
+        cash_dividends: Sequence[CashDividend] = (),
+        close_times: Mapping[date, datetime] | None = None,
+        cutoffs: Mapping[date, datetime] | None = None,
+        source_evidence: Mapping[str, str] | None = None,
+    ) -> None:
+        days = list(sessions)
+        if not days or days != sorted(set(days)) or next_session <= days[-1]:
+            raise ValueError("provide unique, ordered trading sessions and the following session")
+        closes = (
+            dict(close_times)
+            if close_times is not None
+            else {d: datetime.combine(d, time(15), timezone(timedelta(hours=8))) for d in days}
+        )
+        times = dict(cutoffs) if cutoffs is not None else closes
+        _validate_clock(days, closes, times)
+        ordered = sorted(instruments, key=lambda item: item.instrument_id)
+        names = {s.instrument_id for s in ordered}
+        if len(names) != len(ordered) or not names or "" in names:
+            raise ValueError("provide unique, nonempty instrument IDs")
+        specs = []
+        listings: dict[str, tuple[date | None, date | None]] = {}
+        for item in ordered:
+            if item.listed_on and item.delisted_on and item.listed_on >= item.delisted_on:
+                raise ValueError("listing interval is empty")
+            if item.buy_lot_size < 1 or not scaled(item.tick_size, "tick size"):
+                raise ValueError("positive tick and lot sizes are required")
+            specs.append(
+                {
+                    "instrument_id": item.instrument_id,
+                    "asset_class": item.asset_class,
+                    "venue": item.venue,
+                    "currency": item.currency,
+                    "buy_lot_size": item.buy_lot_size,
+                    "tick_size": scaled(item.tick_size, "tick size"),
+                    "settlement": item.settlement,
+                }
+            )
+            listings[item.instrument_id] = (item.listed_on, item.delisted_on)
+        research = _explicit_features(features, names)
+        actions = _cash_dividend_actions(cash_dividends, names, times, next_session)
+
+        self._days, self._next_session = days, next_session
+        self._closes, self._times = closes, times
+        self._names, self._listings = names, listings
+        self._source_evidence = dict(source_evidence or {})
+        self._last_key: tuple[date, str] | None = None
+        self._first_row = True
+        self._columns: list[list[Any]] = [[] for _ in _FEATURES.names]
+        self._feature_rows = 0
+        self.snapshot_id: str | None = None
+        self._snapshot: Snapshot | None = None
+
+        self._root = Path(directory).resolve()
+        self._created_root = not self._root.exists()
+        self._root.mkdir(parents=True, exist_ok=True)
+        self._market_tmp = _HashingWriter(self._root)
+        with NamedTemporaryFile(dir=self._root, prefix=".features-", delete=False) as handle:
+            self._features_path = Path(handle.name)
+        self._parquet = pq.ParquetWriter(self._features_path, _FEATURES)
+        try:
+            for record in research:
+                self._feature(record)
+            # Canonical key order: cash_dividends, instruments, next_session, rows, sessions.
+            self._market_tmp.write(b"{")
+            if actions:
+                self._market_tmp.write(b'"cash_dividends":' + canonical(actions) + b",")
+            self._market_tmp.write(
+                b'"instruments":'
+                + canonical(specs)
+                + b',"next_session":'
+                + canonical(next_session.isoformat())
+                + b',"rows":['
+            )
+        except BaseException:
+            self.abort()
+            raise
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, kind: type[BaseException] | None, *_: object) -> None:
+        if kind is None:
+            self.close()
+        else:
+            self.abort()
+
+    def add(self, rows: Iterable[DailyPrice]) -> None:
+        """Validate and append daily rows; each key must exceed the previous one."""
+        for row in rows:
+            key = (row.session, row.instrument_id)
+            if row.instrument_id not in self._names or row.session not in self._times:
+                raise ValueError(f"unknown or duplicate daily row: {key}")
+            if self._last_key is not None and key <= self._last_key:
+                if key == self._last_key:
+                    raise ValueError(f"unknown or duplicate daily row: {key}")
+                raise ValueError(f"daily rows must arrive in (session, instrument_id) order: {key}")
+            self._last_key = key
+            record = _daily_record(row, self._listings[row.instrument_id])
+            self._market_tmp.write((b"" if self._first_row else b",") + canonical(record))
+            self._first_row = False
+            if row.adjusted_close is not None:
+                if not math.isfinite(row.adjusted_close) or row.adjusted_close <= 0:
+                    raise ValueError("adjusted close must be positive and finite")
+                self._feature(
+                    {
+                        "instrument_id": row.instrument_id,
+                        "name": _ADJUSTED,
+                        "version": "1",
+                        "available_at": self._closes[row.session],
+                        "value": row.adjusted_close,
+                    }
+                )
+
+    @property
+    def snapshot(self) -> Snapshot:
+        """Open the published snapshot on first access (publishing alone never loads it)."""
+        if self.snapshot_id is None:
+            raise RuntimeError("the snapshot has not been published")
+        if self._snapshot is None:
+            self._snapshot = Snapshot.open(self._root)
+        return self._snapshot
+
+    def close(self) -> str:
+        """Publish both objects and the manifest; return the snapshot ID."""
+        if self.snapshot_id is not None:
+            return self.snapshot_id
+        try:
+            self._market_tmp.write(
+                b'],"sessions":' + canonical([d.isoformat() for d in self._days]) + b"}"
+            )
+            if self._columns[0] or not self._feature_rows:
+                self._flush_features()  # create() always writes a table, even an empty one
+            self._parquet.close()
+            market = _publish_file(self._root, "market", "json", *self._market_tmp.finish())
+            with self._features_path.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            features = _publish_file(self._root, "features", "parquet", self._features_path, digest)
+            manifest: dict[str, Any] = {
+                "schema_id": "trademaster.daily-snapshot/v1",
+                "market": market,
+                "features": features,
+                "close_times": {d.isoformat(): self._closes[d].isoformat() for d in self._days},
+                "cutoffs": {
+                    d.isoformat(): self._times[d].astimezone(UTC).isoformat() for d in self._days
+                },
+                "listing": {
+                    s: [d.isoformat() if d else None for d in interval]
+                    for s, interval in self._listings.items()
+                },
+                "source_evidence": self._source_evidence,
+            }
+            manifest["snapshot_id"] = hashlib.sha256(canonical(manifest)).hexdigest()
+            _publish(self._root / "manifest.json", canonical(manifest))
+        except BaseException:
+            self.abort()
+            raise
+        self.snapshot_id = manifest["snapshot_id"]
+        return self.snapshot_id
+
+    def abort(self) -> None:
+        """Discard unpublished temporary files (and the directory if this writer created it)."""
+        self._market_tmp.discard()
+        self._parquet.close()
+        self._features_path.unlink(missing_ok=True)
+        if self._created_root and not any(self._root.iterdir()):
+            self._root.rmdir()
+
+    def _feature(self, record: Mapping[str, Any]) -> None:
+        for column, name in zip(self._columns, _FEATURES.names, strict=True):
+            column.append(record[name])
+        self._feature_rows += 1
+        if len(self._columns[0]) == _FEATURE_ROW_GROUP:
+            self._flush_features()
+
+    def _flush_features(self) -> None:
+        # Identical row-group boundaries keep the file byte-identical to one pq.write_table call.
+        arrays = [
+            pa.array(column, type=spec.type)
+            for column, spec in zip(self._columns, _FEATURES, strict=True)
+        ]
+        self._parquet.write_table(pa.Table.from_arrays(arrays, schema=_FEATURES))
+        self._columns = [[] for _ in _FEATURES.names]
