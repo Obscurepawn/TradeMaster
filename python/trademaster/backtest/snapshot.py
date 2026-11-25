@@ -7,7 +7,7 @@ import itertools
 import json
 import math
 import os
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -17,9 +17,12 @@ from functools import cached_property
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
+import numpy as np
+import numpy.typing as npt
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 if TYPE_CHECKING:
@@ -90,6 +93,52 @@ def _verified(root: Path, descriptor: dict[str, str]) -> tuple[Path, bytes]:
     if hashlib.sha256(payload).hexdigest() != descriptor["sha256"]:
         raise ValueError(f"snapshot object hash mismatch: {path.name}")
     return path, payload
+
+
+def _adjusted_grid(
+    table: pa.Table,
+    days: tuple[date, ...],
+    symbols: tuple[str, ...],
+    close_times: Mapping[date, datetime],
+    lo: npt.NDArray[np.int64],
+    hi: npt.NDArray[np.int64],
+) -> npt.NDArray[np.float64]:
+    """Scatter adjusted-close features into an instrument-major grid (NaN = missing)."""
+    grid = np.full((len(symbols), len(days)), np.nan)
+    if not table.num_rows:
+        return grid
+    # Rows are visited in publication order so the first invalid row matches a sequential scan.
+    table = table.sort_by([("available_at", "ascending")])
+    stamps = pa.array(
+        [close_times[d] for d in days], pa.timestamp("us", tz="UTC")
+    )  # positions follow `days`
+    day_index = pc.index_in(table["available_at"], value_set=stamps)
+    if day_index.null_count:
+        first = pc.index(pc.is_null(day_index), True).as_py()
+        raise KeyError(table["available_at"][first].as_py())
+    symbol_index = pc.index_in(table["instrument_id"], value_set=pa.array(symbols, pa.string()))
+    if symbol_index.null_count:
+        first = pc.index(pc.is_null(symbol_index), True).as_py()
+        raise KeyError(table["instrument_id"][first].as_py())
+    rows = symbol_index.to_numpy()
+    cols = day_index.to_numpy()
+    outside = (cols < lo[rows]) | (cols >= hi[rows])
+    if outside.any():
+        first = int(np.argmax(outside))
+        location = (days[cols[first]], symbols[rows[first]])
+        raise ValueError(f"adjusted close outside listing interval: {location}")
+    grid[rows, cols] = table["value"].to_numpy(zero_copy_only=False)
+    return grid
+
+
+def _listed_range(
+    days: tuple[date, ...], interval: tuple[date | None, date | None]
+) -> tuple[int, int]:
+    """Session index range [lo, hi) where `_listed` holds for the interval."""
+    start, end = interval
+    lo = 0 if start is None else bisect_left(days, start)
+    hi = len(days) if end is None else bisect_left(days, end)
+    return lo, hi
 
 
 def _listed(session: date, interval: tuple[date | None, date | None]) -> bool:
@@ -211,8 +260,9 @@ class Snapshot:
     _cutoffs: Mapping[date, datetime] = field(repr=False)
     _indices: Mapping[date, int] = field(repr=False)
     _listing: Mapping[str, tuple[date | None, date | None]] = field(repr=False)
-    _closes: Mapping[str, tuple[float | None, ...]] = field(repr=False)
-    _adjusted: Mapping[str, tuple[float | None, ...]] = field(repr=False)
+    # Per-instrument rows of instrument-major float64 grids; NaN marks a missing close.
+    _closes: Mapping[str, npt.NDArray[np.float64]] = field(repr=False)
+    _adjusted: Mapping[str, npt.NDArray[np.float64]] = field(repr=False)
     _features: Mapping[str, dict[str, tuple[list[datetime], list[float | None]]]] = field(
         repr=False
     )
@@ -228,7 +278,8 @@ class Snapshot:
 
         def history(symbol: str, adjusted: bool, limit: int | None) -> tuple[float | None, ...]:
             start = 0 if limit is None else max(0, stop - limit)
-            return (self._adjusted if adjusted else self._closes)[symbol][start:stop]
+            values = (self._adjusted if adjusted else self._closes)[symbol][start:stop].tolist()
+            return tuple(None if math.isnan(v) else v for v in values)
 
         def scores(name: str) -> Mapping[str, float | None]:
             observations = self._features.get(name, {})
@@ -465,10 +516,13 @@ class Snapshot:
             raise ValueError("snapshot manifest hash or schema mismatch")
         path, content = _verified(root, manifest["market"])
         _, features_bytes = _verified(root, manifest["features"])
-        market = json.loads(content)
-        days = tuple(date.fromisoformat(d) for d in market["sessions"])
+        # Rust parses the market once; Python reads its close grid instead of re-parsing JSON.
+        native = Market(content)
+        del content
+        session_text, next_text, symbol_list, close_bytes, observed_bytes = native.price_grid()
+        days = tuple(date.fromisoformat(d) for d in session_text)
         indices = {d: i for i, d in enumerate(days)}
-        symbols = tuple(s["instrument_id"] for s in market["instruments"])
+        symbols = tuple(symbol_list)
         listing = {
             s: (date.fromisoformat(a) if a else None, date.fromisoformat(b) if b else None)
             for s, (a, b) in manifest["listing"].items()
@@ -483,40 +537,50 @@ class Snapshot:
             for d, t in manifest["close_times"].items()
         }
         _validate_clock(days, closes, cutoffs)
-        close_indices = {t: indices[d] for d, t in closes.items()}
-        prices: dict[str, list[float | None]] = {s: [None] * len(days) for s in symbols}
-        adjusted: dict[str, list[float | None]] = {s: [None] * len(days) for s in symbols}
-        for r in market["rows"]:
-            symbol, day = r["instrument_id"], date.fromisoformat(r["session"])
-            if not _listed(day, listing[symbol]) and (
-                r["open"] is not None
-                or r["close"] is not None
-                or "yes" in (r["buy_at_open"], r["sell_at_open"])
-            ):
-                raise ValueError(
-                    f"price or opening permission outside listing interval: {(day, symbol)}"
-                )
-            if r["close"] is not None:
-                prices[symbol][indices[day]] = r["close"] / _SCALE
-        next_session = date.fromisoformat(market["next_session"])
-        del market
+        n_days, n_symbols = len(days), len(symbols)
+        # Listed sessions of instrument k occupy the half-open index range [lo[k], hi[k]).
+        bounds = [_listed_range(days, listing[s]) for s in symbols]
+        lo = np.array([b[0] for b in bounds], np.int64)
+        hi = np.array([b[1] for b in bounds], np.int64)
+        sessions_axis = np.arange(n_days)
+        outside = (sessions_axis < lo[:, None]) | (sessions_axis >= hi[:, None])
+        observed = np.frombuffer(observed_bytes, np.uint8).reshape(n_symbols, n_days)
+        violations = np.argwhere((observed.astype(bool) & outside).T)  # (session, instrument)
+        if len(violations):
+            day_index, k = violations[0]
+            raise ValueError(
+                "price or opening permission outside listing interval: "
+                f"{(days[day_index], symbols[k])}"
+            )
+        del outside, observed, observed_bytes
+        raw = np.frombuffer(close_bytes, "<i8").reshape(n_symbols, n_days)
+        prices = np.where(raw == 0, np.nan, raw / _SCALE)
+        del raw, close_bytes
+        next_session = date.fromisoformat(next_text)
+
+        feature_table = pq.read_table(pa.BufferReader(features_bytes))
+        del features_bytes
+        if feature_table.schema != _FEATURES:
+            raise ValueError("snapshot feature schema mismatch")
+        is_adjusted = pc.equal(feature_table["name"], pa.scalar(_ADJUSTED))
+        adjusted = _adjusted_grid(feature_table.filter(is_adjusted), days, symbols, closes, lo, hi)
         observations: dict[str, dict[str, tuple[list[datetime], list[float | None]]]] = defaultdict(
             dict
         )
-        feature_table = pq.read_table(pa.BufferReader(features_bytes))
-        if feature_table.schema != _FEATURES:
-            raise ValueError("snapshot feature schema mismatch")
-        for r in feature_table.sort_by([("available_at", "ascending")]).to_pylist():
-            s, name, t, value = r["instrument_id"], r["name"], r["available_at"], r["value"]
-            if name == _ADJUSTED:
-                index = close_indices[t]
-                if not _listed(days[index], listing[s]):
-                    raise ValueError(f"adjusted close outside listing interval: {(days[index], s)}")
-                adjusted[s][index] = value
-            else:
-                timestamps, values = observations[name].setdefault(s, ([], []))
-                timestamps.append(t)
-                values.append(value)
+        research = feature_table.filter(pc.invert(is_adjusted))
+        del feature_table
+        research = research.sort_by([("available_at", "ascending")])
+        # The verified schema makes these columns non-null except `value`.
+        for s, name, t, value in zip(
+            cast(list[str], research["instrument_id"].to_pylist()),
+            cast(list[str], research["name"].to_pylist()),
+            cast(list[datetime], research["available_at"].to_pylist()),
+            cast(list[float | None], research["value"].to_pylist()),
+            strict=True,
+        ):
+            timestamps, values = observations[name].setdefault(s, ([], []))
+            timestamps.append(t)
+            values.append(value)
         return cls(
             root,
             digest,
@@ -528,10 +592,10 @@ class Snapshot:
             cutoffs,
             indices,
             listing,
-            {s: tuple(v) for s, v in prices.items()},
-            {s: tuple(v) for s, v in adjusted.items()},
+            {s: prices[k] for k, s in enumerate(symbols)},
+            {s: adjusted[k] for k, s in enumerate(symbols)},
             observations,
-            Market(content),
+            native,
         )
 
     @classmethod

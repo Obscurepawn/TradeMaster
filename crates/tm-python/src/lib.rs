@@ -3,6 +3,7 @@ mod replay;
 
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use pythonize::{depythonize, pythonize};
 use self_cell::self_cell;
 use tm_core::PositionSnapshot;
@@ -142,6 +143,35 @@ impl Market {
             Ok(session.finish())
         })?;
         Ok(pythonize(py, &result)?)
+    }
+
+    /// Returns `(sessions, next_session, instrument_ids, closes, observed)`, where `closes`
+    /// holds little-endian `i64` fixed-point closes (`0` = missing) and `observed` one byte
+    /// per cell, both instrument-major in `instrument_ids` order.
+    #[allow(clippy::type_complexity)]
+    fn price_grid<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> (
+        Vec<String>,
+        String,
+        Vec<String>,
+        Bound<'py, PyBytes>,
+        Bound<'py, PyBytes>,
+    ) {
+        let data = self.indexed.borrow_owner();
+        let grid = py.detach(|| self.indexed.borrow_dependent().price_grid());
+        let closes: Vec<u8> = grid.closes.iter().flat_map(|c| c.to_le_bytes()).collect();
+        (
+            data.sessions.clone(),
+            data.next_session.clone(),
+            data.instruments
+                .iter()
+                .map(|spec| spec.instrument_id().0.clone())
+                .collect(),
+            PyBytes::new(py, &closes),
+            PyBytes::new(py, &grid.observed),
+        )
     }
 }
 

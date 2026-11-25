@@ -80,4 +80,45 @@ impl<'a> PreparedMarket<'a> {
     pub fn sessions(&self) -> &[String] {
         &self.data.sessions
     }
+
+    /// Lays out raw closes and listing evidence instrument-major (`instruments × sessions`,
+    /// in snapshot instrument order) so read-only research views reuse this parse.
+    pub fn price_grid(&self) -> PriceGrid {
+        let sessions = self.data.sessions.len();
+        let position: BTreeMap<&str, usize> = self
+            .data
+            .instruments
+            .iter()
+            .enumerate()
+            .map(|(i, spec)| (spec.instrument_id().0.as_str(), i))
+            .collect();
+        let cells = self.data.instruments.len() * sessions;
+        let mut grid = PriceGrid {
+            closes: vec![0; cells],
+            observed: vec![0; cells],
+        };
+        for (day, rows) in self.rows.iter().enumerate() {
+            for (symbol, row) in rows {
+                // Rows were checked against the instrument index when the market was prepared.
+                let cell = position[symbol] * sessions + day;
+                grid.closes[cell] = row.close.unwrap_or(0);
+                grid.observed[cell] = u8::from(
+                    row.open.is_some()
+                        || row.close.is_some()
+                        || matches!(row.buy_at_open, Permission::Yes)
+                        || matches!(row.sell_at_open, Permission::Yes),
+                );
+            }
+        }
+        grid
+    }
+}
+
+/// Instrument-major session grid exported from a prepared market.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PriceGrid {
+    /// Fixed-point raw closes; `0` marks a missing close because valid closes are positive.
+    pub closes: Vec<i64>,
+    /// `1` when a row carries an open, a close, or a `yes` opening permission.
+    pub observed: Vec<u8>,
 }
