@@ -3,7 +3,7 @@
 mod dividends;
 mod execution;
 mod market;
-pub use market::PreparedMarket;
+pub use market::{PreparedMarket, PriceGrid};
 mod sizing;
 mod wire;
 pub use wire::*;

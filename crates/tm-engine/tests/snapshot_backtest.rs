@@ -470,3 +470,22 @@ fn native_snapshot_rejects_ambiguous_record_dates_and_duplicate_dividends() {
             .contains("record_session < ex_session")
     );
 }
+
+#[test]
+fn price_grid_lays_out_closes_and_listing_evidence_instrument_major() {
+    let (mut data, _) = scenario();
+    // B has no close on the third session, and A has an unknown-only row on the last session.
+    data["rows"][6]["close"] = Value::Null;
+    data["rows"][3] = json!({"session":DAYS[3],"instrument_id":"A","open":null,"close":null,
+        "buy_at_open":"unknown","sell_at_open":"unknown"});
+    let data: SnapshotData = serde_json::from_value(data).unwrap();
+    let grid = tm_engine::snapshot::PreparedMarket::new(&data)
+        .unwrap()
+        .price_grid();
+    // Instrument-major: A's four sessions, then B's four sessions; 0 marks a missing close.
+    assert_eq!(
+        grid.closes,
+        vec![10 * U, 9 * U, 9 * U, 0, 20 * U, 20 * U, 0, 20 * U]
+    );
+    assert_eq!(grid.observed, vec![1, 1, 1, 0, 1, 1, 1, 1]);
+}

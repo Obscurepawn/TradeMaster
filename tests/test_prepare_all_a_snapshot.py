@@ -39,6 +39,10 @@ def test_full_a_panel_preserves_listing_auction_limits_and_action_gaps(tmp_path:
     panel = tmp_path / "panel.parquet"
     pq.write_table(pa.Table.from_pylist(rows), panel)
     snapshot = build_snapshot(panel, tmp_path / "market", {}, days[0], days[2], days[3])
+    # Pinned from the list-based preparer: streaming publication must not change a byte.
+    assert (
+        snapshot.snapshot_id == "adacba11b17b28c6997eb8cedf0c8554ab8eb6d71c183630e3482b54ddd3ecf6"
+    )
     assert "600002.SH" not in snapshot.day(days[0]).instruments
     assert "600002.SH" in snapshot.day(days[1]).instruments
     assert "600002.SH" not in snapshot.day(days[2]).instruments

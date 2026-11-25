@@ -15,7 +15,7 @@ from typing import Any
 
 import duckdb
 import pyarrow.parquet as pq
-from trademaster.backtest import DailyPrice, Instrument, Snapshot
+from trademaster.backtest import DailyPrice, Instrument, Snapshot, SnapshotWriter
 from trademaster.backtest.snapshot import Permission
 from trademaster.research.full_a_panel import FactorResearchPanelManifest
 
@@ -117,6 +117,24 @@ def _snapshot(
                 "full-A panel does not cover the example calendar and following session"
             )
         sessions = [day for day, _ in calendar[:-1]]
+        # Listing intervals precede the daily rows in the published market, so read them first.
+        membership = db.execute(
+            """
+            SELECT instrument_id, MIN(session_date), MAX(session_date),
+                   arg_max(venue, session_date)
+            FROM panel WHERE session_date BETWEEN ? AND ? GROUP BY instrument_id
+        """,
+            [start, end],
+        ).fetchall()
+        instruments = [
+            Instrument(
+                symbol,
+                venue.lower(),
+                listed_on=first,
+                delisted_on=last + timedelta(days=1) if last < end else None,
+            )
+            for symbol, first, last, venue in membership
+        ]
         rows = db.execute(
             """
             SELECT session_date, session_index, instrument_id, venue, open, close, pre_close,
@@ -125,40 +143,31 @@ def _snapshot(
         """,
             [start, end],
         ).to_arrow_reader(batch_size=16384)
-        first: dict[str, date] = {}
-        last: dict[str, tuple[int, date, str]] = {}
+        previous_index: dict[str, int] = {}
         closes: dict[str, float] = {}
         factors: dict[str, float] = {}
-        daily = []
-        for batch in rows:
-            for row in batch.to_pylist():
-                symbol, day, index = row["instrument_id"], row["session_date"], row["session_index"]
-                if symbol in last and index != last[symbol][0] + 1:
-                    raise ValueError(f"non-contiguous full-A membership for {symbol}")
-                first.setdefault(symbol, day)
-                last[symbol] = (index, day, row["venue"])
-                daily.append(_price(row, closes.get(symbol), factors.get(symbol)))
-                if row["close"] is not None:
-                    closes[symbol] = row["close"]
-                if row["adj_factor"] is not None:
-                    factors[symbol] = row["adj_factor"]
-    instruments = [
-        Instrument(
-            symbol,
-            venue.lower(),
-            listed_on=first[symbol],
-            delisted_on=day + timedelta(days=1) if day < end else None,
-        )
-        for symbol, (_, day, venue) in last.items()
-    ]
-    return Snapshot.create(
-        directory,
-        sessions=sessions,
-        next_session=following,
-        instruments=instruments,
-        daily=daily,
-        source_evidence=evidence,
-    )
+        # Stream each Arrow batch into the snapshot instead of holding every row in memory.
+        with SnapshotWriter(
+            directory,
+            sessions=sessions,
+            next_session=following,
+            instruments=instruments,
+            source_evidence=evidence,
+        ) as writer:
+            for batch in rows:
+                daily = []
+                for row in batch.to_pylist():
+                    symbol, index = row["instrument_id"], row["session_index"]
+                    if symbol in previous_index and index != previous_index[symbol] + 1:
+                        raise ValueError(f"non-contiguous full-A membership for {symbol}")
+                    previous_index[symbol] = index
+                    daily.append(_price(row, closes.get(symbol), factors.get(symbol)))
+                    if row["close"] is not None:
+                        closes[symbol] = row["close"]
+                    if row["adj_factor"] is not None:
+                        factors[symbol] = row["adj_factor"]
+                writer.add(daily)
+    return writer.snapshot
 
 
 def prepare(manifest_path: Path, directory: Path) -> Snapshot:

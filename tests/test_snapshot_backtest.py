@@ -682,3 +682,34 @@ def test_snapshot_rejects_invalid_dividend(
             cash_dividends=[CashDividend(symbol, record, ex, pay, rate)],
         )
     assert not (tmp_path / "manifest.json").exists()
+
+
+def test_history_cache_is_lazy_and_matches_uncached_reads(tmp_path: Path) -> None:
+    weekly_snapshot(tmp_path)
+    cached = Snapshot.open(tmp_path)
+    uncached = Snapshot.open(tmp_path, history_cache=False)
+    assert cached._history_cache == {}
+
+    day = cached.day(DAYS[2])
+    assert day.closes("A", limit=2) == (9.0, 9.0)
+    assert set(cached._history_cache) == {("A", False)}  # only the symbol and series read
+
+    for session in DAYS:
+        for symbol in ("A", "B"):
+            for adjusted in (False, True):
+                for limit in (None, 1, 3, 10):
+                    assert cached.day(session).closes(
+                        symbol, adjusted=adjusted, limit=limit
+                    ) == uncached.day(session).closes(symbol, adjusted=adjusted, limit=limit)
+    assert uncached._history_cache == {}
+
+
+def test_history_cache_keeps_missing_closes_as_none(tmp_path: Path) -> None:
+    rows = [DailyPrice(d, "A", 10, 10, evidence="fixture") for d in DAYS]
+    rows[1] = DailyPrice(DAYS[1], "A", None, None, "no", "no", evidence="halt", suspended=True)
+    Snapshot.create(
+        tmp_path, sessions=DAYS, next_session=NEXT, instruments=[Instrument("A")], daily=rows
+    )
+    snap = Snapshot.open(tmp_path)
+    assert snap.day(DAYS[3]).closes("A") == (10.0, None, 10.0, 10.0)
+    assert snap.day(DAYS[1]).closes("A", limit=1) == (None,)
