@@ -131,6 +131,10 @@ def _adjusted_grid(
     return grid
 
 
+def _history_tuple(values: npt.NDArray[np.float64]) -> tuple[float | None, ...]:
+    return tuple(None if math.isnan(v) else v for v in values.tolist())
+
+
 def _listed_range(
     days: tuple[date, ...], interval: tuple[date | None, date | None]
 ) -> tuple[int, int]:
@@ -268,6 +272,12 @@ class Snapshot:
     )
 
     _market: Market = field(repr=False, compare=False)
+    # Full-history tuples built on first read of each (instrument, adjusted) series, so repeated
+    # window reads are tuple slices; shared by every run on this open snapshot.
+    _cache_history: bool = field(default=True, repr=False, compare=False)
+    _history_cache: dict[tuple[str, bool], tuple[float | None, ...]] = field(
+        default_factory=dict, repr=False, compare=False
+    )
 
     def day(self, session: date) -> DecisionDay:
         if session not in self._indices:
@@ -278,8 +288,13 @@ class Snapshot:
 
         def history(symbol: str, adjusted: bool, limit: int | None) -> tuple[float | None, ...]:
             start = 0 if limit is None else max(0, stop - limit)
-            values = (self._adjusted if adjusted else self._closes)[symbol][start:stop].tolist()
-            return tuple(None if math.isnan(v) else v for v in values)
+            grid = self._adjusted if adjusted else self._closes
+            if not self._cache_history:
+                return _history_tuple(grid[symbol][start:stop])
+            series = self._history_cache.get((symbol, adjusted))
+            if series is None:
+                series = self._history_cache[symbol, adjusted] = _history_tuple(grid[symbol])
+            return series[start:stop]
 
         def scores(name: str) -> Mapping[str, float | None]:
             observations = self._features.get(name, {})
@@ -502,8 +517,12 @@ class Snapshot:
         return cls.open(root)
 
     @classmethod
-    def open(cls, directory: str | Path) -> Snapshot:
-        """Verify and load the market and features once for use across backtests."""
+    def open(cls, directory: str | Path, *, history_cache: bool = True) -> Snapshot:
+        """Verify and load the market and features once for use across backtests.
+
+        With ``history_cache`` (the default), each instrument's close history becomes a cached
+        tuple on its first read; pass ``False`` to trade repeated-read speed for lower memory.
+        """
         from trademaster._native import Market
 
         root = Path(directory).resolve()
@@ -596,6 +615,7 @@ class Snapshot:
             {s: adjusted[k] for k, s in enumerate(symbols)},
             observations,
             native,
+            history_cache,
         )
 
     @classmethod
