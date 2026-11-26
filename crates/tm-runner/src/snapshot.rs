@@ -67,13 +67,13 @@ pub enum MarketFileError {
     Parse(serde_json::Error),
 }
 
-/// Hashes every byte the parser pulls from the file.
-struct HashingReader<R> {
+/// Hashes every byte read through it into a hasher that outlives the reader.
+struct HashingReader<'a, R> {
     inner: R,
-    hasher: Sha256,
+    hasher: &'a mut Sha256,
 }
 
-impl<R: Read> Read for HashingReader<R> {
+impl<R: Read> Read for HashingReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let read = self.inner.read(buf)?;
         self.hasher.update(&buf[..read]);
@@ -87,20 +87,27 @@ impl<R: Read> Read for HashingReader<R> {
 /// the end first, so a replaced file reports the digest mismatch before any content error.
 pub fn read_market(path: &Path, digest: &str) -> Result<SnapshotData, MarketFileError> {
     let file = File::open(path)?;
-    let mut reader = BufReader::with_capacity(
-        READ_BUFFER,
-        HashingReader {
-            inner: file,
-            hasher: Sha256::new(),
-        },
-    );
-    let mut parser = serde_json::Deserializer::from_reader(&mut reader);
+    let mut hasher = Sha256::new();
+    // The parser must own the `BufReader`: std reads single bytes from an owned `BufReader`
+    // straight out of its buffer, but not through `&mut BufReader`, which halves throughput.
+    let reader = HashingReader {
+        inner: &file,
+        hasher: &mut hasher,
+    };
+    let mut parser =
+        serde_json::Deserializer::from_reader(BufReader::with_capacity(READ_BUFFER, reader));
     let parsed = SnapshotData::deserialize(&mut parser).and_then(|data| {
         parser.end()?;
         Ok(data)
     });
-    io::copy(&mut reader, &mut io::sink())?;
-    if format!("{:x}", reader.into_inner().hasher.finalize()) != digest {
+    // Buffered bytes were hashed when read; hash whatever the parser left in the file.
+    drop(parser);
+    let mut rest = HashingReader {
+        inner: &file,
+        hasher: &mut hasher,
+    };
+    io::copy(&mut rest, &mut io::sink())?;
+    if format!("{:x}", hasher.finalize()) != digest {
         return Err(MarketFileError::Digest);
     }
     parsed.map_err(|streamed| {
