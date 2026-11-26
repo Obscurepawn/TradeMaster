@@ -202,6 +202,20 @@ def test_market_digest_is_checked_before_features_and_content(tmp_path: Path) ->
     assert str(raised) == f"snapshot object hash mismatch: {features_name}"
 
 
+def test_a_non_string_market_digest_is_a_hash_mismatch(tmp_path: Path) -> None:
+    publish(tmp_path)
+    record = manifest(tmp_path)
+    record.pop("snapshot_id")
+    name = record["market"]["file"]
+    for recorded in (int(record["market"]["sha256"], 16), None, [record["market"]["sha256"]]):
+        record["market"]["sha256"] = recorded
+        record.pop("snapshot_id", None)
+        record["snapshot_id"] = hashlib.sha256(canonical(record)).hexdigest()
+        (tmp_path / "manifest.json").write_bytes(canonical(record))
+        raised = error(tmp_path)
+        assert (type(raised), str(raised)) == (ValueError, f"snapshot object hash mismatch: {name}")
+
+
 def test_a_missing_market_object_raises_the_os_error(tmp_path: Path) -> None:
     publish(tmp_path)
     (tmp_path / manifest(tmp_path)["market"]["file"]).unlink()
