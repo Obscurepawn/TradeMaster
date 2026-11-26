@@ -374,3 +374,17 @@ def test_native_market_streams_a_verified_file(tmp_path: Path) -> None:
         Market.open(path, hashlib.sha256(b"other").hexdigest())
     with pytest.raises(FileNotFoundError):
         Market.open(tmp_path / "absent.json", descriptor["sha256"])
+
+
+def test_native_price_grid_is_float64_with_nan_for_missing_closes(tmp_path: Path) -> None:
+    import numpy as np
+    from trademaster._native import Market
+
+    publish(tmp_path)
+    descriptor = manifest(tmp_path)["market"]
+    grid = Market.open(tmp_path / descriptor["file"], descriptor["sha256"]).price_grid()
+    closes = np.frombuffer(grid[3], np.float64).reshape(2, 3)
+    observed = np.frombuffer(grid[4], np.uint8).reshape(2, 3)
+    assert closes[0].tolist() == [10.0, 11.0, 12.0]
+    assert closes[1, 0] == 20.0 and np.isnan(closes[1, 1:]).all()
+    assert observed.tolist() == [[1, 1, 1], [1, 1, 0]]

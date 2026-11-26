@@ -3,7 +3,7 @@ mod replay;
 
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyByteArray, PyBytes};
 use pythonize::{depythonize, pythonize};
 use std::path::PathBuf;
 use tm_core::PositionSnapshot;
@@ -11,6 +11,9 @@ use tm_engine::snapshot::{
     PreparedMarket, SnapshotAccount, SnapshotError, SnapshotRun, SnapshotSession,
 };
 use tm_runner::snapshot::{MarketFileError, read_market};
+
+/// Fixed-point prices are integers scaled by 10^8.
+const FIXED8_SCALE: f64 = 100_000_000.0;
 
 fn execution_error(err: SnapshotError) -> PyErr {
     PyRuntimeError::new_err(err.to_string())
@@ -141,33 +144,60 @@ impl Market {
     }
 
     /// Returns `(sessions, next_session, instrument_ids, closes, observed)`, where `closes`
-    /// holds little-endian `i64` fixed-point closes (`0` = missing) and `observed` one byte
-    /// per cell, both instrument-major in `instrument_ids` order.
+    /// holds native-endian `float64` raw closes (NaN = missing) and `observed` one byte per
+    /// cell, both instrument-major in `instrument_ids` order. The grids are written straight
+    /// into the returned buffers without an intermediate copy.
     #[allow(clippy::type_complexity)]
     fn price_grid<'py>(
         &self,
         py: Python<'py>,
-    ) -> (
+    ) -> PyResult<(
         Vec<String>,
         String,
         Vec<String>,
+        Bound<'py, PyByteArray>,
         Bound<'py, PyBytes>,
-        Bound<'py, PyBytes>,
-    ) {
+    )> {
         let market = &self.market;
-        let grid = py.detach(|| market.price_grid());
-        let closes: Vec<u8> = grid.closes.iter().flat_map(|c| c.to_le_bytes()).collect();
-        (
+        let ids: Vec<String> = market
+            .instrument_ids()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let cells = ids.len() * market.sessions().len();
+        let width = std::mem::size_of::<f64>();
+        let closes = PyByteArray::new_with(py, cells * width, |buffer| {
+            // The new buffer is unreachable from Python until it is returned.
+            py.detach(|| {
+                for cell in buffer.chunks_exact_mut(width) {
+                    cell.copy_from_slice(&f64::NAN.to_ne_bytes());
+                }
+                for cell in market.grid_cells() {
+                    if let Some(close) = cell.close {
+                        // Same rounding as dividing the integer grid by 1e8 in NumPy.
+                        let price = close as f64 / FIXED8_SCALE;
+                        buffer[cell.cell * width..][..width].copy_from_slice(&price.to_ne_bytes());
+                    }
+                }
+            });
+            Ok(())
+        })?;
+        let observed = PyBytes::new_with(py, cells, |buffer| {
+            py.detach(|| {
+                buffer.fill(0);
+                for cell in market.grid_cells() {
+                    buffer[cell.cell] = u8::from(cell.observed);
+                }
+            });
+            Ok(())
+        })?;
+        Ok((
             market.sessions().to_vec(),
             market.next_session().to_owned(),
-            market
-                .instrument_ids()
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-            PyBytes::new(py, &closes),
-            PyBytes::new(py, &grid.observed),
-        )
+            ids,
+            closes,
+            observed,
+        ))
     }
 }
 
