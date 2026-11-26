@@ -179,7 +179,7 @@ pub(super) fn execute_plan<'a>(
                         fees.transfer_fee,
                         fees.slippage,
                     )?;
-                    ledger.apply(&OrderExecution::try_new(
+                    ledger.apply_unaudited(&OrderExecution::try_new(
                         accepted,
                         vec![fill],
                         OrderTerminal::Filled,

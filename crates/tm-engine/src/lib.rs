@@ -1,6 +1,8 @@
 //! Event runtime interfaces.
 
 pub mod snapshot;
+#[cfg(test)]
+mod unaudited_ledger_tests;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -915,16 +917,17 @@ impl<C: TradingCalendar + Clone> LotLedger<C> {
         })
     }
 
-    fn snapshot_with_marks(
+    /// Aggregate open lots into per-instrument `(quantity, sellable)` totals at `event_time`,
+    /// visiting each lot in lot-id order.
+    fn position_totals(
         &self,
         event_time: OffsetDateTime,
-        marks: &BTreeMap<String, i128>,
-    ) -> Result<AccountSnapshot, LedgerError> {
-        let mut quantities: BTreeMap<String, (i128, i128)> = BTreeMap::new();
-        let mut lots = Vec::with_capacity(self.lots.len());
+        mut visit: impl FnMut(&LedgerLot) -> Result<(), LedgerError>,
+    ) -> Result<BTreeMap<&str, (i128, i128)>, LedgerError> {
+        let mut quantities: BTreeMap<&str, (i128, i128)> = BTreeMap::new();
         for lot in self.lots.values() {
             let totals = quantities
-                .entry(lot.instrument_id.clone())
+                .entry(lot.instrument_id.as_str())
                 .or_insert((0, 0));
             totals.0 = totals
                 .0
@@ -936,22 +939,22 @@ impl<C: TradingCalendar + Clone> LotLedger<C> {
                     .checked_add(lot.quantity)
                     .ok_or_else(|| LedgerError::Invariant("sellable overflow".to_owned()))?;
             }
-            lots.push(
-                PositionLot::try_new(
-                    &lot.lot_id,
-                    &lot.instrument_id,
-                    lot.quantity,
-                    lot.acquired_at,
-                    lot.sellable_at,
-                    lot.unit_cost_scaled,
-                )
-                .map_err(|error| LedgerError::Invariant(error.to_string()))?,
-            );
+            visit(lot)?;
         }
+        Ok(quantities)
+    }
+
+    /// Value position totals at `marks`, producing the NAV and ordered position snapshots.
+    fn value_positions(
+        &self,
+        event_time: OffsetDateTime,
+        marks: &BTreeMap<String, i128>,
+        quantities: BTreeMap<&str, (i128, i128)>,
+    ) -> Result<Valuation, LedgerError> {
         let mut market_value = 0_i128;
         let mut positions = Vec::with_capacity(quantities.len());
         for (instrument_id, (quantity, sellable)) in quantities {
-            let mark = marks.get(&instrument_id).copied().ok_or_else(|| {
+            let mark = marks.get(instrument_id).copied().ok_or_else(|| {
                 LedgerError::Invariant(format!("missing mark price: {instrument_id}"))
             })?;
             let value = mark
@@ -974,6 +977,41 @@ impl<C: TradingCalendar + Clone> LotLedger<C> {
                 .ok_or_else(|| LedgerError::Invariant("NAV overflow".to_owned()))?,
         )
         .map_err(|error| LedgerError::Invariant(error.to_string()))?;
+        Ok(Valuation { nav, positions })
+    }
+
+    /// NAV and positions at `event_time` without materializing lots or an `account-state/v1`
+    /// hash; the daily snapshot engine publishes neither.
+    fn valuation(
+        &self,
+        event_time: OffsetDateTime,
+        marks: &BTreeMap<String, i128>,
+    ) -> Result<Valuation, LedgerError> {
+        let quantities = self.position_totals(event_time, |_| Ok(()))?;
+        self.value_positions(event_time, marks, quantities)
+    }
+
+    fn snapshot_with_marks(
+        &self,
+        event_time: OffsetDateTime,
+        marks: &BTreeMap<String, i128>,
+    ) -> Result<AccountSnapshot, LedgerError> {
+        let mut lots = Vec::with_capacity(self.lots.len());
+        let quantities = self.position_totals(event_time, |lot| {
+            lots.push(
+                PositionLot::try_new(
+                    &lot.lot_id,
+                    &lot.instrument_id,
+                    lot.quantity,
+                    lot.acquired_at,
+                    lot.sellable_at,
+                    lot.unit_cost_scaled,
+                )
+                .map_err(|error| LedgerError::Invariant(error.to_string()))?,
+            );
+            Ok(())
+        })?;
+        let Valuation { nav, positions } = self.value_positions(event_time, marks, quantities)?;
         AccountSnapshot::try_new(nav, positions, lots)
             .map_err(|error| LedgerError::Invariant(error.to_string()))
     }
@@ -1001,33 +1039,36 @@ impl<C: TradingCalendar + Clone> LotLedger<C> {
         )
         .map_err(|error| LedgerError::Invariant(error.to_string()))
     }
-}
 
-impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
-    fn apply(&mut self, result: &OrderExecution) -> Result<LedgerEffect, LedgerError> {
-        let before = self.internal_snapshot()?;
-        if result.fills().is_empty() {
-            return LedgerEffect::try_new(
-                format!("ledger:{}", self.transition_seq),
-                result.accepted_order().order_id(),
-                self.current_time,
-                vec![],
-                vec![],
-                &before,
-                &before,
-            )
-            .map_err(|error| LedgerError::Invariant(error.to_string()));
+    /// The open lot `lot_id` as staged so far: `changes` overrides the committed lots, and
+    /// `None` there marks a lot closed by an earlier fill of the same execution.
+    fn staged_lot<'a>(
+        &'a self,
+        changes: &'a BTreeMap<String, Option<LedgerLot>>,
+        lot_id: &str,
+    ) -> Option<&'a LedgerLot> {
+        match changes.get(lot_id) {
+            Some(staged) => staged.as_ref(),
+            None => self.lots.get(lot_id),
         }
-        let mut next = self.clone();
+    }
+
+    /// Compute the postings, lot changes, and resulting state of a filled execution without
+    /// mutating the ledger. Only lots the execution opens or reduces are copied; a sale still
+    /// scans the open lots for the instrument's sellable ones, but nothing is serialized.
+    fn stage_execution(&self, result: &OrderExecution) -> Result<StagedExecution, LedgerError> {
         let intent = result.accepted_order().submitted_order().intent();
         let instrument = self
             .instruments
             .get(&intent.instrument_id().0)
             .ok_or_else(|| LedgerError::Invariant("missing instrument spec".to_owned()))?;
+        let mut cash_scaled = self.cash_scaled;
+        let mut current_time = self.current_time;
+        let mut changes: BTreeMap<String, Option<LedgerLot>> = BTreeMap::new();
         let mut groups = Vec::with_capacity(result.fills().len());
         let mut lot_changes = Vec::new();
         for fill in result.fills() {
-            if fill.event_time() < next.current_time {
+            if fill.event_time() < current_time {
                 return Err(LedgerError::Invariant(
                     "fill time moves backwards".to_owned(),
                 ));
@@ -1051,10 +1092,10 @@ impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
                     let cash_out = notional
                         .checked_add(costs)
                         .ok_or_else(|| LedgerError::Invariant("cash overflow".to_owned()))?;
-                    if next.cash_scaled < cash_out {
+                    if cash_scaled < cash_out {
                         return Err(LedgerError::Invariant("insufficient cash".to_owned()));
                     }
-                    next.cash_scaled -= cash_out;
+                    cash_scaled -= cash_out;
                     postings.push(Self::posting(
                         fill,
                         "position",
@@ -1078,7 +1119,7 @@ impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
                         sellable_at,
                         unit_cost_scaled: cash_out / quantity,
                     };
-                    if next.lots.insert(lot.lot_id.clone(), lot.clone()).is_some() {
+                    if self.staged_lot(&changes, &lot.lot_id).is_some() {
                         return Err(LedgerError::Invariant("duplicate lot id".to_owned()));
                     }
                     lot_changes.push(PositionLotChange::added(
@@ -1092,6 +1133,7 @@ impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
                         )
                         .map_err(|error| LedgerError::Invariant(error.to_string()))?,
                     ));
+                    changes.insert(lot.lot_id.clone(), Some(lot));
                     postings.push(Self::posting(
                         fill,
                         "cash",
@@ -1109,13 +1151,16 @@ impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
                             LedgerError::Invariant("sell costs exceed proceeds".to_owned())
                         })?;
                     let mut remaining = quantity;
-                    let mut sellable_ids = next
+                    let is_sellable = |lot: &LedgerLot| {
+                        lot.instrument_id == intent.instrument_id().0
+                            && lot.sellable_at <= fill.event_time()
+                    };
+                    let mut sellable_ids = self
                         .lots
                         .values()
-                        .filter(|lot| {
-                            lot.instrument_id == intent.instrument_id().0
-                                && lot.sellable_at <= fill.event_time()
-                        })
+                        .filter(|lot| !changes.contains_key(&lot.lot_id))
+                        .chain(changes.values().flatten())
+                        .filter(|lot| is_sellable(lot))
                         .map(|lot| (lot.acquired_at, lot.lot_id.clone()))
                         .collect::<Vec<_>>();
                     sellable_ids.sort();
@@ -1123,7 +1168,11 @@ impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
                         if remaining == 0 {
                             break;
                         }
-                        let available = next.lots[&lot_id].quantity;
+                        let mut lot = self
+                            .staged_lot(&changes, &lot_id)
+                            .expect("staged sellable lot")
+                            .clone();
+                        let available = lot.quantity;
                         let reduced = available.min(remaining);
                         remaining -= reduced;
                         lot_changes.push(
@@ -1131,9 +1180,10 @@ impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
                                 .map_err(|error| LedgerError::Invariant(error.to_string()))?,
                         );
                         if reduced == available {
-                            next.lots.remove(&lot_id);
+                            changes.insert(lot_id, None);
                         } else {
-                            next.lots.get_mut(&lot_id).expect("lot exists").quantity -= reduced;
+                            lot.quantity -= reduced;
+                            changes.insert(lot_id, Some(lot));
                         }
                     }
                     if remaining != 0 {
@@ -1141,8 +1191,7 @@ impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
                             "insufficient sellable lots".to_owned(),
                         ));
                     }
-                    next.cash_scaled = next
-                        .cash_scaled
+                    cash_scaled = cash_scaled
                         .checked_add(cash_in)
                         .ok_or_else(|| LedgerError::Invariant("cash overflow".to_owned()))?;
                     postings.push(Self::posting(
@@ -1196,14 +1245,130 @@ impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
                 LedgerPostingGroup::try_new(postings)
                     .map_err(|error| LedgerError::Invariant(error.to_string()))?,
             );
-            next.current_time = fill.event_time();
-            next.last_prices
-                .insert(intent.instrument_id().0.clone(), fill.price().scaled());
+            current_time = fill.event_time();
         }
-        next.transition_seq = next
+        let transition_seq = self
             .transition_seq
             .checked_add(1)
             .ok_or_else(|| LedgerError::Invariant("transition overflow".to_owned()))?;
+        let last_price = result.fills().last().map(|fill| fill.price().scaled());
+        Ok(StagedExecution {
+            state: StagedState {
+                instrument_id: intent.instrument_id().0.clone(),
+                cash_scaled,
+                current_time,
+                last_price,
+                transition_seq,
+                changes,
+            },
+            groups,
+            lot_changes,
+        })
+    }
+
+    /// Install a staged execution. Infallible, so a transition is either fully applied or not.
+    fn commit(&mut self, staged: StagedState) {
+        self.cash_scaled = staged.cash_scaled;
+        self.current_time = staged.current_time;
+        self.transition_seq = staged.transition_seq;
+        if let Some(price) = staged.last_price {
+            self.last_prices.insert(staged.instrument_id, price);
+        }
+        for (lot_id, lot) in staged.changes {
+            match lot {
+                Some(lot) => self.lots.insert(lot_id, lot),
+                None => self.lots.remove(&lot_id),
+            };
+        }
+    }
+
+    /// Lots that become sellable after the ledger's current time and by `event_time`.
+    fn unlocks(&self, event_time: OffsetDateTime) -> Result<Vec<PositionLotChange>, LedgerError> {
+        self.lots
+            .values()
+            .filter(|lot| lot.sellable_at > self.current_time && lot.sellable_at <= event_time)
+            .map(|lot| {
+                PositionLotChange::unlocked(&lot.lot_id, lot.quantity)
+                    .map_err(|error| LedgerError::Invariant(error.to_string()))
+            })
+            .collect()
+    }
+
+    /// Post a filled execution with the same checks and resulting state as [`Ledger::apply`],
+    /// but without the before/after account snapshots and `LedgerEffect` that only event-run
+    /// audit tables persist. A failure leaves the ledger untouched.
+    fn apply_unaudited(&mut self, result: &OrderExecution) -> Result<(), LedgerError> {
+        if !result.fills().is_empty() {
+            let staged = self.stage_execution(result)?;
+            self.commit(staged.state);
+        }
+        Ok(())
+    }
+
+    /// Advance settlement like [`Ledger::settle`] without building a `LedgerEffect`.
+    fn settle_unaudited(&mut self, event: &SettlementEvent) -> Result<(), LedgerError> {
+        if event.event_time < self.current_time {
+            return Err(LedgerError::Invariant(
+                "settlement time moves backwards".to_owned(),
+            ));
+        }
+        if !self.unlocks(event.event_time)?.is_empty() {
+            self.transition_seq = self
+                .transition_seq
+                .checked_add(1)
+                .ok_or_else(|| LedgerError::Invariant("transition overflow".to_owned()))?;
+            self.current_time = event.event_time;
+        }
+        Ok(())
+    }
+}
+
+/// NAV and positions of an account valuation, without its lots or state hash.
+struct Valuation {
+    nav: NavSnapshot,
+    positions: Vec<PositionSnapshot>,
+}
+
+/// Ledger state after a staged execution: cash, clock, the traded instrument's mark, and the
+/// lots it opened, reduced (`Some`) or closed (`None`).
+struct StagedState {
+    instrument_id: String,
+    cash_scaled: i128,
+    current_time: OffsetDateTime,
+    last_price: Option<i128>,
+    transition_seq: u64,
+    changes: BTreeMap<String, Option<LedgerLot>>,
+}
+
+/// A staged execution: its resulting state plus the postings and lot changes it records.
+struct StagedExecution {
+    state: StagedState,
+    groups: Vec<LedgerPostingGroup>,
+    lot_changes: Vec<PositionLotChange>,
+}
+
+impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
+    fn apply(&mut self, result: &OrderExecution) -> Result<LedgerEffect, LedgerError> {
+        let before = self.internal_snapshot()?;
+        if result.fills().is_empty() {
+            return LedgerEffect::try_new(
+                format!("ledger:{}", self.transition_seq),
+                result.accepted_order().order_id(),
+                self.current_time,
+                vec![],
+                vec![],
+                &before,
+                &before,
+            )
+            .map_err(|error| LedgerError::Invariant(error.to_string()));
+        }
+        let StagedExecution {
+            state,
+            groups,
+            lot_changes,
+        } = self.stage_execution(result)?;
+        let mut next = self.clone();
+        next.commit(state);
         let after = next.internal_snapshot()?;
         let effect = LedgerEffect::try_new(
             format!("ledger:{}", self.transition_seq),
@@ -1226,17 +1391,7 @@ impl<C: TradingCalendar + Clone> Ledger for LotLedger<C> {
             ));
         }
         let before = self.internal_snapshot()?;
-        let unlocks = self
-            .lots
-            .values()
-            .filter(|lot| {
-                lot.sellable_at > self.current_time && lot.sellable_at <= event.event_time
-            })
-            .map(|lot| {
-                PositionLotChange::unlocked(&lot.lot_id, lot.quantity)
-                    .map_err(|error| LedgerError::Invariant(error.to_string()))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+        let unlocks = self.unlocks(event.event_time)?;
         if unlocks.is_empty() {
             return LedgerEffect::try_new(
                 format!("settlement:{}", self.transition_seq),
