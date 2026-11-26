@@ -360,3 +360,17 @@ def test_market_row_order_does_not_change_reads_or_results(tmp_path: Path) -> No
         random.Random(seed).shuffle(content["rows"])
         republish(root, market=canonical(content))
         assert outcome(Snapshot.open(root)) == expected, seed
+
+
+def test_native_market_streams_a_verified_file(tmp_path: Path) -> None:
+    from trademaster._native import Market
+
+    publish(tmp_path)
+    descriptor = manifest(tmp_path)["market"]
+    path = tmp_path / descriptor["file"]
+    sessions, next_session, ids, _, _ = Market.open(path, descriptor["sha256"]).price_grid()
+    assert (sessions, next_session, ids) == ([d.isoformat() for d in DAYS], "2024-01-10", ["A", "B"])
+    with pytest.raises(ValueError, match="^market snapshot SHA-256 mismatch$"):
+        Market.open(path, hashlib.sha256(b"other").hexdigest())
+    with pytest.raises(FileNotFoundError):
+        Market.open(tmp_path / "absent.json", descriptor["sha256"])

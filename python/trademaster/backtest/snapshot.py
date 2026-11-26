@@ -42,6 +42,8 @@ _FEATURE_FIELDS: list[tuple[str, pa.DataType]] = [
     ("value", pa.float64()),
 ]
 _FEATURES = pa.schema(_FEATURE_FIELDS)
+# The native loader's message when a market file does not hash to its recorded digest.
+_MARKET_DIGEST_MISMATCH = "market snapshot SHA-256 mismatch"
 # pq.write_table's default row-group size; SnapshotWriter cuts row groups at the same rows.
 _FEATURE_ROW_GROUP = 1024 * 1024
 
@@ -81,14 +83,40 @@ def _publish(path: Path, payload: bytes) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def _verified(root: Path, descriptor: dict[str, str]) -> tuple[Path, bytes]:
+def _object_path(root: Path, descriptor: dict[str, str]) -> Path:
     path = (root / descriptor["file"]).resolve()
     if path.parent != root:
         raise ValueError("snapshot object must be inside the snapshot directory")
+    return path
+
+
+def _verified(root: Path, descriptor: dict[str, str]) -> tuple[Path, bytes]:
+    path = _object_path(root, descriptor)
     payload = path.read_bytes()
     if hashlib.sha256(payload).hexdigest() != descriptor["sha256"]:
         raise ValueError(f"snapshot object hash mismatch: {path.name}")
     return path, payload
+
+
+def _open_market(root: Path, descriptor: dict[str, str]) -> tuple[Path, Market | Exception]:
+    """Stream the market file into Rust, which verifies its digest as it parses.
+
+    A digest mismatch raises here. A content error is returned instead, so the caller can
+    verify the features object first, as if both digests were checked before parsing.
+    """
+    from trademaster._native import Market
+
+    path = _object_path(root, descriptor)
+    with path.open("rb"):  # Raise the same OSError that reading the whole file would.
+        pass
+    try:
+        return path, Market.open(path, descriptor["sha256"])
+    except ValueError as error:
+        if str(error) == _MARKET_DIGEST_MISMATCH:
+            raise ValueError(f"snapshot object hash mismatch: {path.name}") from None
+        return path, error
+    except RuntimeError as error:
+        return path, error
 
 
 def _adjusted_grid(
@@ -495,8 +523,6 @@ class Snapshot:
         With ``history_cache`` (the default), each instrument's close history becomes a cached
         tuple on its first read; pass ``False`` to trade repeated-read speed for lower memory.
         """
-        from trademaster._native import Market
-
         root = Path(directory).resolve()
         manifest = json.loads((root / "manifest.json").read_bytes())
         digest = manifest.pop("snapshot_id")
@@ -505,11 +531,10 @@ class Snapshot:
             or digest != hashlib.sha256(canonical(manifest)).hexdigest()
         ):
             raise ValueError("snapshot manifest hash or schema mismatch")
-        path, content = _verified(root, manifest["market"])
+        path, native = _open_market(root, manifest["market"])
         _, features_bytes = _verified(root, manifest["features"])
-        # Rust parses the market once; Python reads its close grid instead of re-parsing JSON.
-        native = Market(content)
-        del content
+        if isinstance(native, Exception):
+            raise native
         session_text, next_text, symbol_list, close_bytes, observed_bytes = native.price_grid()
         days = tuple(date.fromisoformat(d) for d in session_text)
         indices = {d: i for i, d in enumerate(days)}

@@ -5,10 +5,12 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pythonize::{depythonize, pythonize};
+use std::path::PathBuf;
 use tm_core::PositionSnapshot;
 use tm_engine::snapshot::{
-    PreparedMarket, SnapshotAccount, SnapshotData, SnapshotError, SnapshotRun, SnapshotSession,
+    PreparedMarket, SnapshotAccount, SnapshotError, SnapshotRun, SnapshotSession,
 };
+use tm_runner::snapshot::{MarketFileError, read_market};
 
 fn execution_error(err: SnapshotError) -> PyErr {
     PyRuntimeError::new_err(err.to_string())
@@ -76,11 +78,14 @@ struct Market {
 
 #[pymethods]
 impl Market {
-    #[new]
-    fn new(py: Python<'_>, content: &[u8]) -> PyResult<Self> {
+    /// Stream and verify a market file against its recorded SHA-256 digest, then index it.
+    #[staticmethod]
+    fn open(py: Python<'_>, path: PathBuf, sha256: &str) -> PyResult<Self> {
         py.detach(|| {
-            let data: SnapshotData = serde_json::from_slice(content)
-                .map_err(|err| PyValueError::new_err(format!("invalid market snapshot: {err}")))?;
+            let data = read_market(&path, sha256).map_err(|err| match err {
+                MarketFileError::Read(err) => PyErr::from(err),
+                err => PyValueError::new_err(err.to_string()),
+            })?;
             let market = PreparedMarket::new(data).map_err(execution_error)?;
             Ok(Self { market })
         })

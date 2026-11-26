@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from os import PathLike
 from typing import Any
 
 class NativeAccount:
@@ -14,7 +15,8 @@ class NativeAccount:
 type CloseCallback = Callable[[int, NativeAccount, list[dict[str, Any]]], dict[str, Any] | None]
 
 class Market:
-    def __init__(self, content: bytes) -> None: ...
+    @staticmethod
+    def open(path: str | PathLike[str], sha256: str) -> Market: ...
     def run(
         self,
         run: dict[str, Any],
