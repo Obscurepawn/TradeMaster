@@ -196,7 +196,7 @@ fn file_replay_matches_an_in_memory_run() {
         let replayed = replay(&scratch.0, Some(&content), &digest(&content)).unwrap();
         let data: SnapshotData = serde_json::from_slice(&content).unwrap();
         let run: SnapshotRun = serde_json::from_value(run()).unwrap();
-        let in_memory = serde_json::to_vec(&run_snapshot(&data, &run).unwrap()).unwrap();
+        let in_memory = serde_json::to_vec(&run_snapshot(data, &run).unwrap()).unwrap();
         assert_eq!(replayed, in_memory);
         let text = String::from_utf8(replayed).unwrap();
         assert!(text.contains("\"carried_mark\":true"), "{text}");

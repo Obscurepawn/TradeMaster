@@ -91,6 +91,6 @@ pub fn run_snapshot_json(input: &[u8], directory: &Path) -> Result<Vec<u8>, Runn
         req.snapshot_id.as_deref(),
     )?;
     let result =
-        run_snapshot(&data, &req.run).map_err(|err| RunnerError::Execution(err.to_string()))?;
+        run_snapshot(data, &req.run).map_err(|err| RunnerError::Execution(err.to_string()))?;
     serde_json::to_vec(&result).map_err(|err| RunnerError::Serialization(err.to_string()))
 }

@@ -1,5 +1,6 @@
 //! Snapshot prices, amounts and weights are integers scaled by 100,000,000.
 //! Quantities are whole shares and policy rates are parts per million.
+use super::rows::MarketRows;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use tm_core::{InstrumentSpec, Side};
@@ -10,7 +11,8 @@ pub struct SnapshotData {
     pub sessions: Vec<String>,
     pub next_session: String,
     pub instruments: Vec<InstrumentSpec>,
-    pub rows: Vec<DailyRow>,
+    /// Decoded row by row from `DailyRow` records into a compact columnar form.
+    pub rows: MarketRows,
     #[serde(default)]
     pub cash_dividends: Vec<CashDividend>,
 }
@@ -25,7 +27,7 @@ pub struct CashDividend {
     pub amount_per_share: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Permission {
     Yes,

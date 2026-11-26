@@ -32,7 +32,7 @@ fn market() -> Value {
 fn prepare(text: &str) -> Result<(), String> {
     let data: SnapshotData =
         serde_json::from_str(text).map_err(|err| format!("invalid market snapshot: {err}"))?;
-    PreparedMarket::new(&data)
+    PreparedMarket::new(data)
         .map(|_| ())
         .map_err(|err| err.to_string())
 }
@@ -271,7 +271,7 @@ fn rotation() -> (Value, SnapshotRun) {
 
 fn result(data: &Value, run: &SnapshotRun) -> String {
     let data: SnapshotData = serde_json::from_value(data.clone()).unwrap();
-    serde_json::to_string(&run_snapshot(&data, run).unwrap()).unwrap()
+    serde_json::to_string(&run_snapshot(data, run).unwrap()).unwrap()
 }
 
 #[test]
@@ -284,7 +284,7 @@ fn row_order_does_not_change_results_or_the_price_grid() {
     }
     let grid = |value: &Value| {
         let data: SnapshotData = serde_json::from_value(value.clone()).unwrap();
-        PreparedMarket::new(&data).unwrap().price_grid()
+        PreparedMarket::new(data).unwrap().price_grid()
     };
     let expected_grid = grid(&data);
     for seed in 0..16 {

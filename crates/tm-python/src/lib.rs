@@ -5,7 +5,6 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pythonize::{depythonize, pythonize};
-use self_cell::self_cell;
 use tm_core::PositionSnapshot;
 use tm_engine::snapshot::{
     PreparedMarket, SnapshotAccount, SnapshotData, SnapshotError, SnapshotRun, SnapshotSession,
@@ -13,14 +12,6 @@ use tm_engine::snapshot::{
 
 fn execution_error(err: SnapshotError) -> PyErr {
     PyRuntimeError::new_err(err.to_string())
-}
-
-self_cell! {
-    struct IndexedMarket {
-        owner: SnapshotData,
-        #[covariant]
-        dependent: PreparedMarket,
-    }
 }
 
 /// Cash and holdings at a single valued close. Positions are sorted by instrument ID.
@@ -80,7 +71,7 @@ impl NativeAccount {
 
 #[pyclass(frozen, module = "trademaster._native")]
 struct Market {
-    indexed: IndexedMarket,
+    market: PreparedMarket,
 }
 
 #[pymethods]
@@ -90,9 +81,8 @@ impl Market {
         py.detach(|| {
             let data: SnapshotData = serde_json::from_slice(content)
                 .map_err(|err| PyValueError::new_err(format!("invalid market snapshot: {err}")))?;
-            let indexed = IndexedMarket::try_new(data, |data| PreparedMarket::new(data))
-                .map_err(execution_error)?;
-            Ok(Self { indexed })
+            let market = PreparedMarket::new(data).map_err(execution_error)?;
+            Ok(Self { market })
         })
     }
 
@@ -105,7 +95,7 @@ impl Market {
         callback: Option<Py<PyAny>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let run: SnapshotRun = depythonize(run)?;
-        let market = self.indexed.borrow_dependent();
+        let market = &self.market;
         if decision_indices
             .last()
             .is_some_and(|i| *i >= market.sessions().len())
@@ -159,15 +149,16 @@ impl Market {
         Bound<'py, PyBytes>,
         Bound<'py, PyBytes>,
     ) {
-        let data = self.indexed.borrow_owner();
-        let grid = py.detach(|| self.indexed.borrow_dependent().price_grid());
+        let market = &self.market;
+        let grid = py.detach(|| market.price_grid());
         let closes: Vec<u8> = grid.closes.iter().flat_map(|c| c.to_le_bytes()).collect();
         (
-            data.sessions.clone(),
-            data.next_session.clone(),
-            data.instruments
-                .iter()
-                .map(|spec| spec.instrument_id().0.clone())
+            market.sessions().to_vec(),
+            market.next_session().to_owned(),
+            market
+                .instrument_ids()
+                .into_iter()
+                .map(str::to_owned)
                 .collect(),
             PyBytes::new(py, &closes),
             PyBytes::new(py, &grid.observed),

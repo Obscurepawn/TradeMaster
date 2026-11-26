@@ -91,10 +91,15 @@ impl Costs {
         Ok(low * lot)
     }
 }
+/// Buy plans exist only for instruments whose mark was found while sizing.
+fn mark_of(marks: &Marks<'_>, id: &str) -> i128 {
+    marks.get(id).expect("planned buys have a previous close")
+}
+
 pub(super) fn size(
     batch: &TargetBatch,
     account: &SnapshotAccount,
-    marks: &BTreeMap<String, i128>,
+    marks: &Marks<'_>,
     specs: &BTreeMap<String, InstrumentSpec>,
     policy: &Policy,
     costs: &Costs,
@@ -123,7 +128,7 @@ pub(super) fn size(
         if held == 0 && w == 0 {
             continue;
         }
-        let Some(&mark) = marks.get(id) else {
+        let Some(mark) = marks.get(id) else {
             return Ok(Sizing {
                 reserve,
                 buy_budget: budget,
@@ -184,7 +189,7 @@ pub(super) fn size(
     for plan in &mut buys {
         let spec = &specs[&plan.instrument];
         let cap = plan.cap.unwrap();
-        let demand = mul(plan.desired, marks[&plan.instrument])?;
+        let demand = mul(plan.desired, mark_of(marks, &plan.instrument))?;
         let share = if demand == buy_demand {
             budget
         } else {
@@ -208,7 +213,10 @@ pub(super) fn size(
             if next - plan.reserve > left {
                 continue;
             }
-            let deficit = mul(plan.desired - plan.quantity, marks[&plan.instrument])?;
+            let deficit = mul(
+                plan.desired - plan.quantity,
+                mark_of(marks, &plan.instrument),
+            )?;
             if best.is_none_or(|(_, highest, _)| deficit > highest) {
                 best = Some((i, deficit, next));
             }
