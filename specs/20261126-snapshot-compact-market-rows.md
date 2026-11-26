@@ -1,6 +1,6 @@
 # Compact Market Rows and Streaming Snapshot Loading
 
-**Status:** Proposed | **Date:** 2026-11-26 | **Scope:** Peak and resident memory of `Snapshot.open` and daily snapshot runs (`trademaster.backtest.snapshot`, `tm-python`, `tm-engine::snapshot`, `tm-runner`) | **Updates:** [Python and Rust Native Backtest Interface](20261105-python-rust-backtest-interface.md)
+**Status:** Implemented | **Date:** 2026-11-26 | **Scope:** Peak and resident memory of `Snapshot.open` and daily snapshot runs (`trademaster.backtest.snapshot`, `tm-python`, `tm-engine::snapshot`, `tm-runner`) | **Updates:** [Python and Rust Native Backtest Interface](20261105-python-rust-backtest-interface.md)
 
 ## Motivation and Scope
 
@@ -38,22 +38,26 @@ A new `MarketRows` type replaces `Vec<DailyRow>` inside `SnapshotData`. Its `Des
 - both opening permissions, `suspended`, `corporate_action_gap`, both price-limit markers, and "evidence is non-empty" are packed into one flag word (only the non-emptiness of `evidence` is consumed by the engine);
 - buy and sell reasons are interned to `u32` ids into a small string table.
 
-`PreparedMarket::new(data: SnapshotData)` takes ownership and validates rows in file order with exactly the current checks and messages (price-limit marker consistency, row outside sampled sessions, unknown instrument, duplicate row using a session × instrument bitset, non-positive price). It then counting-sorts rows into per-session CSR storage (`offsets` plus instrument-sorted columns), so arbitrary input row order remains valid. Lookups binary-search the session slice by instrument index; iteration walks the slice.
+`PreparedMarket::new(data: SnapshotData)` takes ownership and reports the first failing row in file order with exactly the current checks and messages (price-limit marker consistency, row outside sampled sessions, unknown instrument, duplicate row, non-positive price; a non-positive price is kept as a flag bit because `0` encodes absence). One pass in file order finds the first row failing a per-row check and whether keys are already strictly increasing, as canonical snapshots are; an unsorted prefix is counting-sorted by session and sorted by `(instrument, input position)` within each session, which places a repeated key directly after its first occurrence, so the earliest duplicate is the smallest second position of an adjacent equal pair. This replaces the proposed session × instrument bitset, whose size grows with the calendar × universe product rather than with rows. Rows are then stored as per-session CSR columns (`offsets` plus instrument-sorted columns, 30 bytes per row); already sorted input is moved without a permutation, so arbitrary input row order remains valid at the cost of a 4-byte-per-row permutation only when needed. Lookups binary-search the session slice by instrument index; iteration walks the slice.
 
-Engine code reads rows through a `Copy` `RowView` carrying the decoded scalars and a borrowed reason, from which `Opening` is built. Because `PreparedMarket` no longer borrows its input, `tm-python` drops the self-referential `IndexedMarket` (`self_cell`). `close_session` keeps marks in a dense `Vec<i64>` indexed by instrument instead of rebuilding a `BTreeMap<String, i128>` every session. Expected resident size is ~33 B per row (measured 33.0 B/row and 0.23 GB parse peak in a prototype on the snapshot above).
+Engine code reads rows through a `Copy` `RowView` carrying the decoded scalars and a borrowed reason, from which `Opening` is built. Because `PreparedMarket` no longer borrows its input, `tm-python` drops the self-referential `IndexedMarket` (`self_cell`). `SnapshotSession` keeps closing marks in a dense `Vec<i64>` indexed by instrument (`0` = no mark, since marks stay positive through dividend adjustment) instead of rebuilding a `BTreeMap<String, i128>` every session; the shared `LotLedger` still values positions from a string-keyed map, which is now built per valuation from held instruments only, leaving `tm-engine/src/lib.rs` unchanged.
 
-### Streaming, hashing loader (`tm-runner::snapshot::load_market`)
+### Streaming, hashing loader (`tm-runner::snapshot::read_market`)
 
-One loader serves `tm-runner` replay and `tm-python`: `BufReader<HashingReader<File>>` feeds `serde_json::Deserializer::from_reader`, and the digest is finalized after the last byte. On a parse error the loader drains the remaining bytes first and reports `SHA-256 mismatch` when the digest is wrong, preserving the current error priority. The `sha2` crate is built with its `asm` feature (on aarch64 the portable implementation hashes 1.9 GB in 3.4 s versus 0.75 s). `trademaster._native.Market` gains `open(path, sha256)`; `snapshot.py` stops reading the market file into memory while keeping its market-then-features verification order.
+One loader serves `tm-runner` replay (`load_market`) and `tm-python`: a `BufReader` over a `HashingReader` feeds `serde_json::Deserializer::from_reader`, and the digest is finalized after the last byte. The deserializer must own the `BufReader`: std serves serde_json's single-byte reads straight from an owned `BufReader`'s buffer but not through `&mut BufReader`, which doubled load time (11.4 s versus 5.7 s on the Hong Kong market). The hasher and file are therefore borrowed by the reader, so after a parse error the bytes left in the file are hashed from the same file offset and `SHA-256 mismatch` is reported before any content error, preserving the current error priority. Errors are typed (`MarketFileError::{Read, Digest, Parse}`) with the previous messages.
+
+serde_json's stream reader counts a byte it has only peeked at, so some errors (for example `unknown field`) name a column one past the in-memory parser's position. To keep error text identical, a correctly hashed file that fails to parse is read whole once more and parsed in memory, and that error is reported; only invalid files pay this cost. The `sha2` crate enables its `asm` feature on aarch64 (non-MSVC), where the portable implementation hashes 1.9 GB in 3.4 s versus 0.75 s; x86-64 already selects SHA extensions at run time.
+
+`trademaster._native.Market.open(path, sha256)` replaces the `Market(content)` constructor, mapping a digest mismatch to `ValueError("market snapshot SHA-256 mismatch")`, file errors to the matching `OSError`, and parse errors to `ValueError("invalid market snapshot: ...")`. `snapshot.py` opens the file first (so a missing market raises the same `OSError` as before), translates the digest mismatch to `snapshot object hash mismatch: <file>`, and holds a content error until the features digest has been verified, keeping the order market digest, features digest, market content.
 
 ### Python grids (`trademaster.backtest.snapshot`)
 
-- The features Parquet file is read in batches of the required columns with dictionary-encoded identifiers. Timestamps map to sessions with `searchsorted` and instruments with a dictionary lookup, values are scattered directly into the adjusted grid, and research (non-adjusted) features are collected in the same pass. Rows are not sorted; only when a batch contains an invalid row is the earliest offender by `available_at` located, so exception types, messages, and their priority (unknown timestamp, then unknown instrument, then outside the listing interval) are unchanged. The schema check uses the Parquet file's Arrow schema because dictionary reads change column types. A prototype produced a bit-identical grid with a +0.15 GB instead of +1.78 GB transient and half the time, and matched 2,000 randomized error cases.
-- `Market.price_grid` emits the `float64` close grid (NaN for missing) directly, removing the `i64 → Vec<u8> → PyBytes → float64` copies (~1.0 GB transient saved at 65M cells).
+- The features Parquet file is read in batches of 262,144 rows of the required columns with dictionary-encoded identifiers. Timestamps map to sessions with `searchsorted` and instruments with a dictionary lookup, values are scattered directly into the adjusted grid in file order (so a repeated observation resolves to the last one in the file, as the stable sort did), and research (non-adjusted) features are collected in the same pass and then sorted as before. Rows are never sorted for the grid; for each error kind the earliest offender by `(null time, available_at, file row)` is tracked, so exception types, messages, and their priority (unknown or null timestamp, then unknown or null instrument, then outside the listing interval) are unchanged, and rows with a null `name` remain in neither set. The schema check uses the Parquet file's Arrow schema because dictionary reads change column types.
+- `Market.price_grid` writes the `float64` close grid (NaN for missing, `close as f64 / 1e8`, the same IEEE operations as NumPy's `int64 / int`) and the listing-evidence bytes straight into a new `bytearray` and `bytes` with the GIL released, removing the `i64 → Vec<u8> → PyBytes → float64` copies. The `bytearray` keeps the close rows writable, as the `np.where` result was.
 
 ### Compatibility
 
-Internal Rust APIs change: `PreparedMarket` loses its lifetime, `run_snapshot` takes ownership of the market, and the private `_native.Market` constructor is replaced by `open`. Python and wire contracts are unchanged.
+Internal Rust APIs change: `PreparedMarket` loses its lifetime and gains `next_session`, `instrument_ids`, and `grid_cells`; `SnapshotData::rows` becomes `MarketRows`; `run_snapshot` takes ownership of the market; `Permission` derives `Copy` and `PartialEq`; and the private `_native.Market` constructor is replaced by `open`, whose `price_grid` returns a `float64` `bytearray`. The only edits to existing tests replace `&data` with `data` at `run_snapshot` and `PreparedMarket::new` call sites. Python and wire contracts are unchanged.
 
 ## Verification Plan
 
@@ -64,17 +68,44 @@ Internal Rust APIs change: `PreparedMarket` loses its lifetime, `run_snapshot` t
 
 ## Tasks
 
-- [ ] Characterization tests and error corpus on the baseline
-- [ ] `MarketRows`, owned `PreparedMarket`, CSR lookups, `RowView`, dense marks; remove `self_cell`
-- [ ] Streaming hashing loader shared by `tm-runner` and `tm-python`; `sha2` `asm`
-- [ ] Streaming adjusted-close and research features; direct `float64` close grid
-- [ ] Differential check and benchmarks recorded below
-- [ ] Update `crates/tm-python/AGENTS.md`, `crates/tm-engine/AGENTS.md`, `docs/reference/snapshot-backtest.md`, and the interface spec
+- [x] Characterization tests and error corpus on the baseline
+- [x] `MarketRows`, owned `PreparedMarket`, CSR lookups, `RowView`, dense marks; remove `self_cell`
+- [x] Streaming hashing loader shared by `tm-runner` and `tm-python`; `sha2` `asm`
+- [x] Streaming adjusted-close and research features; direct `float64` close grid
+- [x] Differential check and benchmarks recorded below
+- [x] Update `crates/tm-python/AGENTS.md`, `crates/tm-engine/AGENTS.md`, `crates/tm-runner/AGENTS.md`, `docs/reference/snapshot-backtest.md`, and the interface spec
 
 ## Open Questions
 
-- `from_reader` parsing may be slower than `from_slice`; if the streaming loader exceeds today's open time by more than 2×, record the measurement and evaluate a chunked reader before reconsidering memory mapping.
+- Resolved: `from_reader` stays within the 2× open-time budget (Hong Kong `Snapshot.open` 6.4–6.5 s versus 5.6–6.8 s before) once the parser owns its `BufReader`; a chunked reader is not needed. The remaining parse cost is serde_json's byte-at-a-time stream reader (about 4.0 s of the 5.75 s market load is spent parsing into `IgnoredAny`).
+- An invalid market whose digest matches is read whole a second time to reproduce in-memory error positions, so its error path peaks near the file size, as every open did before this change.
+- `close_session` allocates a dense mark vector per session (instrument count × 8 bytes); reusing two buffers would save the allocation but was not needed for the measured workloads.
 
 ## Verification and Regression Record
 
-Pending.
+**Red/green.** Characterization suites were committed first and passed on the baseline: [`crates/tm-engine/tests/snapshot_market.rs`](../crates/tm-engine/tests/snapshot_market.rs) (21 malformed-row cases and 5 malformed-text cases with exact serde and validation messages including line and column, error precedence within and across rows, 16 shuffles producing identical results and price grids, and the earliest file-order error under shuffles), [`crates/tm-runner/tests/market_loading.rs`](../crates/tm-runner/tests/market_loading.rs) (truncation, trailing data, invalid UTF-8, unknown fields, duplicate rows, empty and non-JSON files, each also under a mismatched digest; missing and directory paths; file replay equal to an in-memory run), and [`tests/test_snapshot_open.py`](../tests/test_snapshot_open.py) (market error types and texts, market digest before features digest before market content, `OSError` for a missing market, feature error types, values and priority including null times and instruments, schema mismatches, duplicate observations, and shuffled market rows). Switching to `from_reader` turned the unknown-field cases red (column 576 became 577, 935 became 936), which led to the in-memory error re-parse; new tests for `Market.open` and the `float64` grid failed before their implementation.
+
+**Differential check** (harness kept outside the repository, baseline = the parent of this change built in its own environment):
+
+| Input | Compared | Result |
+|---|---|---|
+| 200 seeded random snapshots (25–90 sessions, 3–11 instruments, listings and delistings, suspensions with carried marks, upper and lower price-limit markers, unknown permissions, missing rows and closes, corporate-action gaps, cash dividends, research features; both `enforce_price_limits` settings) | Canonical `result.json` of daily-callback, weekly-callback, and dated-target runs with initial lots (511 runs: 96 completed, 415 `insufficient_data`, 89 requests rejected before running; 9,027 fills; 144 with dividends, 121 with carried marks), `tm-replay` of each saved request, `closes`/`scores` reads, and 1,600 corrupted republications (duplicate, zero, unknown-instrument, next-session, marker, unknown-field, bad-permission, truncated, invalid UTF-8 and shuffled markets; unknown-time, unknown or null instrument and listing-boundary features) | Report files byte-identical; every replay reproduced its result |
+| Hong Kong snapshot below, weekly cross-sectional momentum over all active instruments with `detail=True` | `result.json` (50,161,967 bytes, 43,038 fills, `insufficient_data` after the last valued close), `request.json`, SHA-256 of the raw and adjusted `float64` grids, `tm-replay` of the saved request | Byte-identical; both replays match |
+
+**Benchmarks.** Apple M4 (10 cores), 16 GB, macOS 27.2, Python 3.12.16, release builds; each measurement is one process started cold on a warm page cache. Footprint is macOS physical footprint (`/usr/bin/time -l` "peak memory footprint" or `proc_pid_rusage` lifetime maximum); steady is the current footprint after `Snapshot.open` and `gc.collect()`.
+
+| Workload | Metric | Before | After |
+|---|---|---:|---:|
+| Hong Kong daily snapshot, 7,706,886 rows (2,812 instruments × 4,160 sessions, 1.93 GB `market.json`, 22 MB features) | `Snapshot.open` time | 5.6–6.8 s | 6.4–6.5 s |
+| | `Snapshot.open` peak footprint | 6.18–6.21 GB | 0.68 GB |
+| | Steady footprint after open | 5.89–5.92 GB | 0.65 GB |
+| | Open + weekly momentum run (`detail=True`): run time, process peak | 12.7 s, 7.26 GB | 9.4 s, 1.73 GB |
+| | `tm-replay` of the saved request: time, peak | 18.0 s, 4.23 GB | 12.8 s, 0.43 GB |
+| | Rust market load alone (`read_market` + `PreparedMarket::new`): time, process peak | — | 5.75 s + 0.04 s, 0.18 GB |
+| Synthetic daily snapshot, 15,931,862 rows (5,000 instruments × 4,000 sessions, seeded random walk with suspensions and price-limit markers, 3.74 GB `market.json`, 55 MB features) | `Snapshot.open` time | 14.1 s | 12.4 s |
+| | `Snapshot.open` peak footprint | 10.07 GB | 1.10 GB |
+| | Steady footprint after open | 7.27 GB | 1.10 GB |
+
+The prepared market's columns take 30 bytes per row by construction (4-byte instrument index, two 8-byte prices, a 2-byte flag word, two 4-byte reason ids) plus per-session offsets; the remaining steady footprint is dominated by the two `float64` grids (8 bytes per instrument-session cell each) and the Python runtime.
+
+**Suite totals.** 75 Rust workspace tests, 463 Python tests (4 skipped for absent live Tushare credentials or plan files), `cargo fmt --all --check`, `cargo clippy --locked --workspace --all-targets -- -D warnings`, `uv run ruff check python tests`, and `uv run mypy --strict python tests` pass.

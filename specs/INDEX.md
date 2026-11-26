@@ -15,7 +15,7 @@ This directory records TradeMaster's architectural RFCs, subsystem data and exec
 
 ## Performance & Execution Benchmarks
 
-- [Compact Market Rows and Streaming Snapshot Loading](20261126-snapshot-compact-market-rows.md) — Proposes a columnar in-memory market (~33 B/row instead of ~285 B), a streaming SHA-256-verifying loader, and streamed feature grids to cut `Snapshot.open` peak memory several-fold without changing snapshot formats or results.
+- [Compact Market Rows and Streaming Snapshot Loading](20261126-snapshot-compact-market-rows.md) — Replaces the string-keyed market with 30-byte columnar rows, streams the market through a SHA-256-verifying parser, and streams feature grids, cutting `Snapshot.open` peak memory on a 7.7M-row snapshot from 6.2 GB to 0.68 GB with byte-identical results and error text.
 - [Ledger State Hashing Cost in Daily Snapshot Runs](20261126-ledger-state-hash-cost.md) — Investigates and removes per-transition re-serialization and hashing of every open lot, which dominates lot-accumulating daily runs, while keeping all state hashes and audit outputs byte-identical.
 
 - [Broad ETF Execution and Cash-Distribution Benchmark](20261105-broad-etf-benchmark.md) — Benchmarks fifteen years (3,644 Shanghai sessions) of SSE 50 index signals, `510050.SH` ETF opening fills, and 14 cash distributions against an independent reference ledger.
