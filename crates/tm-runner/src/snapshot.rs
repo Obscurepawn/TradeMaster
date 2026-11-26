@@ -67,16 +67,30 @@ pub enum MarketFileError {
     Parse(serde_json::Error),
 }
 
-/// Hashes every byte read through it into a hasher that outlives the reader.
+/// The digest of every byte read so far, and whether the file grew after an end of file.
+#[derive(Default)]
+struct Hashed {
+    hasher: Sha256,
+    at_end: bool,
+    grew: bool,
+}
+
+/// Hashes every byte read through it into state that outlives the reader.
 struct HashingReader<'a, R> {
     inner: R,
-    hasher: &'a mut Sha256,
+    hashed: &'a mut Hashed,
 }
 
 impl<R: Read> Read for HashingReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let read = self.inner.read(buf)?;
-        self.hasher.update(&buf[..read]);
+        let hashed = &mut *self.hashed;
+        hashed.hasher.update(&buf[..read]);
+        if read == 0 {
+            hashed.at_end = true;
+        } else if hashed.at_end {
+            hashed.grew = true;
+        }
         Ok(read)
     }
 }
@@ -86,13 +100,28 @@ impl<R: Read> Read for HashingReader<'_, R> {
 /// The digest is compared after the last byte. A file that fails to parse is still read to
 /// the end first, so a replaced file reports the digest mismatch before any content error.
 pub fn read_market(path: &Path, digest: &str) -> Result<SnapshotData, MarketFileError> {
-    let file = File::open(path)?;
-    let mut hasher = Sha256::new();
+    let mut file = File::open(path)?;
+    stream_market(&mut file, digest)?.map_err(|streamed| {
+        MarketFileError::Parse(in_memory_error(path, digest).unwrap_or(streamed))
+    })
+}
+
+/// Parse and hash `source`; the digest is checked first, the parse result is returned after.
+///
+/// The parser sees a prefix of the bytes hashed. If a read reported end of file and a later
+/// read still returned bytes, the file grew in place while it was read: the parser may have
+/// stopped at the earlier end, so the digest does not describe what was parsed. Reading the
+/// whole file first would have hashed only the shorter file, so that is a digest mismatch.
+fn stream_market<R: Read>(
+    source: &mut R,
+    digest: &str,
+) -> Result<Result<SnapshotData, serde_json::Error>, MarketFileError> {
+    let mut hashed = Hashed::default();
     // The parser must own the `BufReader`: std reads single bytes from an owned `BufReader`
     // straight out of its buffer, but not through `&mut BufReader`, which halves throughput.
     let reader = HashingReader {
-        inner: &file,
-        hasher: &mut hasher,
+        inner: &mut *source,
+        hashed: &mut hashed,
     };
     let mut parser =
         serde_json::Deserializer::from_reader(BufReader::with_capacity(READ_BUFFER, reader));
@@ -103,16 +132,14 @@ pub fn read_market(path: &Path, digest: &str) -> Result<SnapshotData, MarketFile
     // Buffered bytes were hashed when read; hash whatever the parser left in the file.
     drop(parser);
     let mut rest = HashingReader {
-        inner: &file,
-        hasher: &mut hasher,
+        inner: source,
+        hashed: &mut hashed,
     };
     io::copy(&mut rest, &mut io::sink())?;
-    if format!("{:x}", hasher.finalize()) != digest {
+    if hashed.grew || format!("{:x}", hashed.hasher.finalize()) != digest {
         return Err(MarketFileError::Digest);
     }
-    parsed.map_err(|streamed| {
-        MarketFileError::Parse(in_memory_error(path, digest).unwrap_or(streamed))
-    })
+    Ok(parsed)
 }
 
 /// The error an in-memory parse of the same verified bytes reports.
@@ -161,4 +188,79 @@ pub fn run_snapshot_json(input: &[u8], directory: &Path) -> Result<Vec<u8>, Runn
     let result =
         run_snapshot(data, &req.run).map_err(|err| RunnerError::Execution(err.to_string()))?;
     serde_json::to_vec(&result).map_err(|err| RunnerError::Serialization(err.to_string()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A file that reports end of file once, then has `tail` appended in place.
+    struct Growing {
+        head: io::Cursor<Vec<u8>>,
+        tail: Option<Vec<u8>>,
+    }
+
+    impl Read for Growing {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let read = self.head.read(buf)?;
+            if read == 0
+                && let Some(tail) = self.tail.take()
+            {
+                // Report this end of file; the appended bytes are read next time.
+                let at = self.head.position();
+                let mut bytes = std::mem::take(self.head.get_mut());
+                bytes.extend(tail);
+                self.head = io::Cursor::new(bytes);
+                self.head.set_position(at);
+            }
+            Ok(read)
+        }
+    }
+
+    fn market() -> Vec<u8> {
+        br#"{"cash_dividends":[],"instruments":[],"next_session":"2024-01-10","rows":[],"sessions":["2024-01-09"]}"#.to_vec()
+    }
+
+    fn stream(
+        head: &[u8],
+        tail: &[u8],
+    ) -> Result<Result<SnapshotData, serde_json::Error>, MarketFileError> {
+        let whole = [head, tail].concat();
+        let digest = format!("{:x}", Sha256::digest(&whole));
+        let mut source = Growing {
+            head: io::Cursor::new(head.to_vec()),
+            tail: (!tail.is_empty()).then(|| tail.to_vec()),
+        };
+        stream_market(&mut source, &digest)
+    }
+
+    #[test]
+    fn a_complete_file_parses() {
+        assert!(matches!(stream(&market(), b""), Ok(Ok(_))));
+    }
+
+    #[test]
+    fn bytes_appended_after_a_complete_parse_are_a_digest_mismatch() {
+        // The final file is invalid (trailing characters) but its digest matches.
+        assert!(matches!(
+            stream(&market(), b"garbage"),
+            Err(MarketFileError::Digest)
+        ));
+    }
+
+    #[test]
+    fn a_file_still_being_written_is_a_digest_mismatch_not_a_content_error() {
+        // The parser hits end of file mid-value, then the rest of the valid file arrives.
+        let valid = market();
+        let (head, tail) = valid.split_at(40);
+        let got = stream(head, tail);
+        assert!(matches!(got, Err(MarketFileError::Digest)), "{got:?}");
+    }
+
+    #[test]
+    fn a_syntax_error_before_the_end_is_still_a_content_error() {
+        let mut invalid = market();
+        invalid[1] = b'!';
+        assert!(matches!(stream(&invalid, b""), Ok(Err(_))));
+    }
 }

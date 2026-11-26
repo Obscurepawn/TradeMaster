@@ -112,8 +112,10 @@ def _open_market(root: Path, descriptor: dict[str, str]) -> tuple[Path, Market |
     path = _object_path(root, descriptor)
     with path.open("rb"):  # Raise the same OSError that reading the whole file would.
         pass
+    digest = descriptor["sha256"]
     try:
-        return path, Market.open(path, descriptor["sha256"])
+        # A recorded digest that is not a string matches nothing, like an unequal hex digest.
+        return path, Market.open(path, digest if isinstance(digest, str) else "")
     except ValueError as error:
         if str(error) == _MARKET_DIGEST_MISMATCH:
             raise ValueError(f"snapshot object hash mismatch: {path.name}") from None
