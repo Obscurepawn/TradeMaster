@@ -12,8 +12,8 @@ mod wire;
 pub use wire::*;
 
 use super::{
-    CnFeeSchedule, DataError, ExecutionError, Ledger, LedgerError, LedgerLot, LotLedger,
-    TradingCalendar, ppm_cost,
+    CnFeeSchedule, DataError, ExecutionError, LedgerError, LedgerLot, LotLedger, TradingCalendar,
+    Valuation, ppm_cost,
 };
 use execution::execute_plan;
 use sizing::{Costs, Sizing, size};
@@ -22,9 +22,9 @@ use std::sync::Arc;
 use thiserror::Error;
 use time::{Date, Duration, OffsetDateTime, format_description::well_known::Iso8601};
 use tm_core::{
-    AcceptedOrder, AccountSnapshot, ContractError, ExactValueError, Fill, Fixed8, InstrumentSpec,
-    OrderExecution, OrderIntent, OrderTerminal, PositionSnapshot, Quantity, SettlementEvent, Side,
-    SubmittedOrder, Venue,
+    AcceptedOrder, ContractError, ExactValueError, Fill, Fixed8, InstrumentSpec, OrderExecution,
+    OrderIntent, OrderTerminal, PositionSnapshot, Quantity, SettlementEvent, Side, SubmittedOrder,
+    Venue,
 };
 
 const U: i128 = 100_000_000;
@@ -153,14 +153,14 @@ pub struct SnapshotAccount {
 }
 
 impl SnapshotAccount {
-    fn from_ledger(account: AccountSnapshot, receivable: i128) -> Result<Self, SnapshotError> {
-        let nav = account.nav();
+    fn from_ledger(account: Valuation, receivable: i128) -> Result<Self, SnapshotError> {
+        let nav = &account.nav;
         Ok(Self {
             cash: nav.cash(),
             market_value: nav.market_value(),
             dividend_receivable: Fixed8::from_scaled(receivable)?,
             equity: Fixed8::from_scaled(add(nav.net_asset_value().scaled(), receivable)?)?,
-            positions: account.into_positions(),
+            positions: account.positions,
         })
     }
 }
@@ -387,7 +387,8 @@ impl<'a> SnapshotSession<'a> {
             }
         }
         if i > 0 {
-            self.ledger.settle(&SettlementEvent { event_time: open })?;
+            self.ledger
+                .settle_unaudited(&SettlementEvent { event_time: open })?;
         }
         for lot in self.ledger.lots.values() {
             if market
@@ -409,8 +410,7 @@ impl<'a> SnapshotSession<'a> {
             let batch = &self.targets[k];
             self.out.batches[k].attempts += 1;
             let account = SnapshotAccount::from_ledger(
-                self.ledger
-                    .snapshot_with_marks(open, &self.held_marks(&self.marks))?,
+                self.ledger.valuation(open, &self.held_marks(&self.marks))?,
                 self.dividend_receivable,
             )?;
             let plan = size(
@@ -509,11 +509,10 @@ impl<'a> SnapshotSession<'a> {
             self.close_dividends(day)?;
         }
         let account = SnapshotAccount::from_ledger(
-            self.ledger
-                .snapshot_with_marks(close, &self.held_marks(&next))?,
+            self.ledger.valuation(close, &self.held_marks(&next))?,
             self.dividend_receivable,
         )?;
-        // The shared ledger hashes subsequent transitions with the most recent close.
+        // Later ledger transitions start from the most recent close and its marks.
         self.ledger.current_time = close;
         for p in &account.positions {
             let id = &p.instrument_id().0;
