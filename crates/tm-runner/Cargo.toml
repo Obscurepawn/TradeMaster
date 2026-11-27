@@ -16,6 +16,11 @@ time.workspace = true
 tm-core.workspace = true
 tm-engine.workspace = true
 
+# The portable SHA-256 is about 4x slower than the ARMv8 instructions the assembly
+# backend uses; x86-64 already selects SHA extensions at run time without it.
+[target.'cfg(all(target_arch = "aarch64", not(target_env = "msvc")))'.dependencies]
+sha2 = { workspace = true, features = ["asm"] }
+
 [lib]
 name = "tm_runner"
 path = "src/lib.rs"

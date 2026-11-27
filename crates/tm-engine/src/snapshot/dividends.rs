@@ -12,18 +12,18 @@ pub(super) struct DividendDay {
 pub(super) fn schedule(
     data: &SnapshotData,
     instruments: &LedgerInstruments,
-    index: &BTreeMap<&str, usize>,
+    index: &BTreeMap<String, usize>,
 ) -> Result<BTreeMap<usize, DividendDay>, SnapshotError> {
     let mut calendar = BTreeMap::<usize, DividendDay>::new();
     let mut keys = BTreeSet::new();
     for (i, d) in data.cash_dividends.iter().enumerate() {
         for day in [&d.record_session, &d.ex_session, &d.pay_session] {
             open_time(day)?;
-            if day < &data.next_session && !index.contains_key(day.as_str()) {
+            if day < &data.next_session && !index.contains_key(day) {
                 return Err(invalid("cash dividend falls outside the trading calendar"));
             }
         }
-        let Some(&record) = index.get(d.record_session.as_str()) else {
+        let Some(&record) = index.get(&d.record_session) else {
             return Err(invalid("cash dividend needs an in-sample record session"));
         };
         if d.record_session >= d.ex_session || d.ex_session > d.pay_session {
@@ -39,10 +39,10 @@ pub(super) fn schedule(
             return Err(invalid("invalid or duplicate cash dividend"));
         }
         calendar.entry(record).or_default().record.push(i);
-        if let Some(&ex) = index.get(d.ex_session.as_str()) {
+        if let Some(&ex) = index.get(&d.ex_session) {
             calendar.entry(ex).or_default().ex.push(i);
         }
-        if let Some(&pay) = index.get(d.pay_session.as_str()) {
+        if let Some(&pay) = index.get(&d.pay_session) {
             calendar.entry(pay).or_default().pay.push(i);
         }
     }
@@ -60,18 +60,23 @@ impl SnapshotSession<'_> {
 
     pub(super) fn accrue_dividends(&mut self, day: &DividendDay) -> Result<(), SnapshotError> {
         for &i in &day.ex {
-            let d = &self.market.data.cash_dividends[i];
+            let d = &self.market.cash_dividends[i];
             // Use the ex-dividend reference for sizing, including suspended carried marks.
             let rate = i128::from(d.amount_per_share);
-            if let Some(mark) = self.marks.get_mut(&d.instrument_id) {
-                if *mark <= rate {
+            if let Some(mark) = self
+                .market
+                .instrument_index(&d.instrument_id)
+                .map(|k| &mut self.marks[k])
+                .filter(|mark| **mark != 0)
+            {
+                if i128::from(*mark) <= rate {
                     return Err(invalid(
                         "cash dividend must be below the previous closing price",
                     ));
                 }
-                *mark -= rate;
+                *mark -= d.amount_per_share;
                 if let Some(last) = self.ledger.last_prices.get_mut(&d.instrument_id) {
-                    *last = *mark;
+                    *last = i128::from(*mark);
                 }
             }
             let quantity = self.recorded_shares[i];
@@ -94,8 +99,7 @@ impl SnapshotSession<'_> {
 
     pub(super) fn close_dividends(&mut self, day: &DividendDay) -> Result<(), SnapshotError> {
         for &i in &day.record {
-            self.recorded_shares[i] =
-                self.shares(&self.market.data.cash_dividends[i].instrument_id)?;
+            self.recorded_shares[i] = self.shares(&self.market.cash_dividends[i].instrument_id)?;
         }
         for &i in &day.pay {
             if let Some(entry) = self.dividend_entries[i] {

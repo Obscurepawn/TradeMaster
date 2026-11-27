@@ -33,7 +33,7 @@ fn scenario() -> (Value, Value) {
 fn run(data: &Value, req: &Value) -> Value {
     let data: SnapshotData = serde_json::from_value(data.clone()).unwrap();
     let run: SnapshotRun = serde_json::from_value(req.clone()).unwrap();
-    serde_json::to_value(run_snapshot(&data, &run).unwrap()).unwrap()
+    serde_json::to_value(run_snapshot(data, &run).unwrap()).unwrap()
 }
 
 fn limit_scenario(side: &str) -> (Value, Value, usize) {
@@ -111,7 +111,7 @@ fn price_limit_markers_require_a_known_blocked_permission() {
             data["rows"][row][format!("{side}_at_open")] = json!(permission);
             let data: SnapshotData = serde_json::from_value(data).unwrap();
             let req: SnapshotRun = serde_json::from_value(req).unwrap();
-            let error = run_snapshot(&data, &req).unwrap_err();
+            let error = run_snapshot(data, &req).unwrap_err();
             assert!(error.to_string().contains("price-limit marker"));
         }
     }
@@ -363,7 +363,7 @@ fn initial_lots_remain_locked_beyond_the_sample() {
     req["initial_lots"][0]["sellable_session"] = json!("2024-01-06");
     let data: SnapshotData = serde_json::from_value(data).unwrap();
     let req: SnapshotRun = serde_json::from_value(req).unwrap();
-    assert!(run_snapshot(&data, &req).is_err());
+    assert!(run_snapshot(data, &req).is_err());
 }
 
 #[test]
@@ -374,7 +374,7 @@ fn decisions_can_wait_for_the_sale_using_the_actual_closing_account() {
     req["detail"] = json!(false);
     let data: SnapshotData = serde_json::from_value(data).unwrap();
     let run: SnapshotRun = serde_json::from_value(req).unwrap();
-    let market = PreparedMarket::new(&data).unwrap();
+    let market = PreparedMarket::new(data).unwrap();
     let mut session = SnapshotSession::new(&market, &run, true).unwrap();
     let target = |index: usize, weights: Value| -> TargetBatch {
         serde_json::from_value(json!({
@@ -455,7 +455,7 @@ fn native_snapshot_rejects_ambiguous_record_dates_and_duplicate_dividends() {
     data["cash_dividends"] = json!([action, action]);
     let duplicate: SnapshotData = serde_json::from_value(data.clone()).unwrap();
     assert!(
-        run_snapshot(&duplicate, &request)
+        run_snapshot(duplicate, &request)
             .unwrap_err()
             .to_string()
             .contains("duplicate cash dividend")
@@ -464,7 +464,7 @@ fn native_snapshot_rejects_ambiguous_record_dates_and_duplicate_dividends() {
     data["cash_dividends"][0]["record_session"] = json!(DAYS[1]);
     let same_day: SnapshotData = serde_json::from_value(data).unwrap();
     assert!(
-        run_snapshot(&same_day, &request)
+        run_snapshot(same_day, &request)
             .unwrap_err()
             .to_string()
             .contains("record_session < ex_session")
@@ -479,7 +479,7 @@ fn price_grid_lays_out_closes_and_listing_evidence_instrument_major() {
     data["rows"][3] = json!({"session":DAYS[3],"instrument_id":"A","open":null,"close":null,
         "buy_at_open":"unknown","sell_at_open":"unknown"});
     let data: SnapshotData = serde_json::from_value(data).unwrap();
-    let grid = tm_engine::snapshot::PreparedMarket::new(&data)
+    let grid = tm_engine::snapshot::PreparedMarket::new(data)
         .unwrap()
         .price_grid();
     // Instrument-major: A's four sessions, then B's four sessions; 0 marks a missing close.

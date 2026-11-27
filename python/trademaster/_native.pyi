@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from os import PathLike
 from typing import Any
 
 class NativeAccount:
@@ -14,14 +15,15 @@ class NativeAccount:
 type CloseCallback = Callable[[int, NativeAccount, list[dict[str, Any]]], dict[str, Any] | None]
 
 class Market:
-    def __init__(self, content: bytes) -> None: ...
+    @staticmethod
+    def open(path: str | PathLike[str], sha256: str) -> Market: ...
     def run(
         self,
         run: dict[str, Any],
         decision_indices: list[int],
         callback: CloseCallback | None = None,
     ) -> dict[str, Any]: ...
-    def price_grid(self) -> tuple[list[str], str, list[str], bytes, bytes]: ...
+    def price_grid(self) -> tuple[list[str], str, list[str], bytearray, bytes]: ...
 
 def run_event(request: bytes) -> bytes: ...
 def replay_request(request: bytes, base_dir: str) -> bytes: ...

@@ -3,14 +3,17 @@
 mod dividends;
 mod execution;
 mod market;
-pub use market::{PreparedMarket, PriceGrid};
+pub use market::{GridCell, PreparedMarket, PriceGrid};
+mod rows;
+pub use rows::MarketRows;
+use rows::RowView;
 mod sizing;
 mod wire;
 pub use wire::*;
 
 use super::{
-    CnFeeSchedule, DataError, ExecutionError, Ledger, LedgerError, LedgerLot, LotLedger,
-    TradingCalendar, ppm_cost,
+    CnFeeSchedule, DataError, ExecutionError, LedgerError, LedgerLot, LotLedger, TradingCalendar,
+    Valuation, ppm_cost,
 };
 use execution::execute_plan;
 use sizing::{Costs, Sizing, size};
@@ -19,9 +22,9 @@ use std::sync::Arc;
 use thiserror::Error;
 use time::{Date, Duration, OffsetDateTime, format_description::well_known::Iso8601};
 use tm_core::{
-    AcceptedOrder, AccountSnapshot, ContractError, ExactValueError, Fill, Fixed8, InstrumentSpec,
-    OrderExecution, OrderIntent, OrderTerminal, PositionSnapshot, Quantity, SettlementEvent, Side,
-    SubmittedOrder, Venue,
+    AcceptedOrder, ContractError, ExactValueError, Fill, Fixed8, InstrumentSpec, OrderExecution,
+    OrderIntent, OrderTerminal, PositionSnapshot, Quantity, SettlementEvent, Side, SubmittedOrder,
+    Venue,
 };
 
 const U: i128 = 100_000_000;
@@ -86,24 +89,24 @@ fn open_time(session: &str) -> Result<OffsetDateTime, SnapshotError> {
 /// The execution function receives only the opening price and permission for its side.
 struct Opening<'a> {
     price: Option<i64>,
-    permission: &'a Permission,
+    permission: Permission,
     reason: Option<&'a str>,
     documented: bool,
     suspended: bool,
     blocked_by_price_limit: bool,
     corporate_action_gap: bool,
 }
-impl DailyRow {
-    fn opening(&self, side: Side) -> Opening<'_> {
+impl<'a> RowView<'a> {
+    fn opening(&self, side: Side) -> Opening<'a> {
         let (permission, reason, blocked_by_price_limit) = match side {
             Side::Buy => (
-                &self.buy_at_open,
-                self.buy_reason.as_deref(),
+                self.buy_at_open,
+                self.buy_reason,
                 self.buy_blocked_by_price_limit,
             ),
             Side::Sell => (
-                &self.sell_at_open,
-                self.sell_reason.as_deref(),
+                self.sell_at_open,
+                self.sell_reason,
                 self.sell_blocked_by_price_limit,
             ),
         };
@@ -111,7 +114,7 @@ impl DailyRow {
             price: self.open,
             permission,
             reason,
-            documented: self.evidence.as_ref().is_some_and(|s| !s.is_empty()),
+            documented: self.documented,
             suspended: self.suspended,
             blocked_by_price_limit,
             corporate_action_gap: self.corporate_action_gap,
@@ -150,21 +153,34 @@ pub struct SnapshotAccount {
 }
 
 impl SnapshotAccount {
-    fn from_ledger(account: AccountSnapshot, receivable: i128) -> Result<Self, SnapshotError> {
-        let nav = account.nav();
+    fn from_ledger(account: Valuation, receivable: i128) -> Result<Self, SnapshotError> {
+        let nav = &account.nav;
         Ok(Self {
             cash: nav.cash(),
             market_value: nav.market_value(),
             dividend_receivable: Fixed8::from_scaled(receivable)?,
             equity: Fixed8::from_scaled(add(nav.net_asset_value().scaled(), receivable)?)?,
-            positions: account.into_positions(),
+            positions: account.positions,
         })
+    }
+}
+
+/// Closing marks indexed by instrument index; `0` is no mark because marks are positive.
+struct Marks<'a> {
+    market: &'a PreparedMarket,
+    values: &'a [i64],
+}
+
+impl Marks<'_> {
+    fn get(&self, id: &str) -> Option<i128> {
+        let mark = self.values[self.market.instrument_index(id)?];
+        (mark != 0).then_some(i128::from(mark))
     }
 }
 
 /// The account, active targets and results of a single backtest.
 pub struct SnapshotSession<'a> {
-    market: &'a PreparedMarket<'a>,
+    market: &'a PreparedMarket,
     ledger: LotLedger<Sessions>,
     costs: Costs,
     policy: Policy,
@@ -174,7 +190,7 @@ pub struct SnapshotSession<'a> {
     arrivals: Vec<Vec<usize>>,
     active: Option<usize>,
     latest: Option<usize>,
-    marks: BTreeMap<String, i128>,
+    marks: Vec<i64>,
     cursor: usize,
     out: SnapshotResult,
     detail: bool,
@@ -187,7 +203,7 @@ pub struct SnapshotSession<'a> {
 
 impl<'a> SnapshotSession<'a> {
     pub fn new(
-        market: &'a PreparedMarket<'a>,
+        market: &'a PreparedMarket,
         run: &SnapshotRun,
         feedback: bool,
     ) -> Result<Self, SnapshotError> {
@@ -255,15 +271,15 @@ impl<'a> SnapshotSession<'a> {
             arrivals: vec![Vec::new(); market.sessions().len() + 1],
             active: None,
             latest: None,
-            marks: BTreeMap::new(),
+            marks: vec![0; market.instrument_count()],
             cursor: 0,
             out: SnapshotResult::new(),
             detail: run.detail,
             feedback,
             fills_read: 0,
             dividend_receivable: 0,
-            recorded_shares: vec![0; market.data.cash_dividends.len()],
-            dividend_entries: vec![None; market.data.cash_dividends.len()],
+            recorded_shares: vec![0; market.cash_dividends.len()],
+            dividend_entries: vec![None; market.cash_dividends.len()],
         };
         for target in &run.targets {
             session.register(target.clone())?;
@@ -354,8 +370,8 @@ impl<'a> SnapshotSession<'a> {
     }
 
     fn trade_day(&mut self, i: usize, session: &str) -> Result<SnapshotAccount, SnapshotError> {
-        let open = self.market.calendar.0[i];
-        let rows = &self.market.rows[i];
+        let market = self.market;
+        let open = market.calendar.0[i];
         // The newest decision wins when several batches become eligible at the same open.
         self.arrivals[i].sort_by_key(|&k| &self.targets[k].decision_session);
         for &arriving in &self.arrivals[i] {
@@ -371,11 +387,12 @@ impl<'a> SnapshotSession<'a> {
             }
         }
         if i > 0 {
-            self.ledger.settle(&SettlementEvent { event_time: open })?;
+            self.ledger
+                .settle_unaudited(&SettlementEvent { event_time: open })?;
         }
         for lot in self.ledger.lots.values() {
-            if rows
-                .get(lot.instrument_id.as_str())
+            if market
+                .lookup(i, &lot.instrument_id)
                 .is_some_and(|r| r.corporate_action_gap)
             {
                 return Err(SnapshotError::Gap(
@@ -393,13 +410,16 @@ impl<'a> SnapshotSession<'a> {
             let batch = &self.targets[k];
             self.out.batches[k].attempts += 1;
             let account = SnapshotAccount::from_ledger(
-                self.ledger.snapshot_with_marks(open, &self.marks)?,
+                self.ledger.valuation(open, &self.held_marks(&self.marks))?,
                 self.dividend_receivable,
             )?;
             let plan = size(
                 batch,
                 &account,
-                &self.marks,
+                &Marks {
+                    market,
+                    values: &self.marks,
+                },
                 &self.ledger.instruments,
                 &self.policy,
                 &self.costs,
@@ -407,7 +427,7 @@ impl<'a> SnapshotSession<'a> {
             let done = execute_plan(
                 &mut self.ledger,
                 &self.costs,
-                |id, side| rows.get(id).map(|r| r.opening(side)),
+                |id, side| market.lookup(i, id).map(|r| r.opening(side)),
                 session,
                 open,
                 batch,
@@ -426,31 +446,48 @@ impl<'a> SnapshotSession<'a> {
         self.close_session(i, session, open)
     }
 
+    /// Marks of held instruments in the form the shared ledger values positions with.
+    fn held_marks(&self, values: &[i64]) -> BTreeMap<String, i128> {
+        let marks = Marks {
+            market: self.market,
+            values,
+        };
+        let mut held = BTreeMap::new();
+        for lot in self.ledger.lots.values() {
+            if !held.contains_key(&lot.instrument_id)
+                && let Some(mark) = marks.get(&lot.instrument_id)
+            {
+                held.insert(lot.instrument_id.clone(), mark);
+            }
+        }
+        held
+    }
+
     fn close_session(
         &mut self,
         i: usize,
         session: &str,
         open: OffsetDateTime,
     ) -> Result<SnapshotAccount, SnapshotError> {
-        let rows = &self.market.rows[i];
-        let mut next = BTreeMap::new();
-        let mut carried = BTreeSet::new();
-        for (&id, &row) in rows {
+        let market = self.market;
+        let mut next = vec![0; self.marks.len()];
+        // Instrument indexes valued at a carried mark, in increasing order.
+        let mut carried = Vec::new();
+        for position in market.day(i) {
+            let (k, row) = market.row(position);
             if row.suspended {
-                if row.evidence.as_ref().is_some_and(|s| !s.is_empty())
-                    && let Some(&last) = self.marks.get(id)
-                {
-                    next.insert(id.to_owned(), last);
-                    carried.insert(id);
+                if row.documented && self.marks[k] != 0 {
+                    next[k] = self.marks[k];
+                    carried.push(k);
                 }
             } else if let Some(price) = row.close {
-                next.insert(id.to_owned(), i128::from(price));
+                next[k] = price;
             }
         }
         for lot in self.ledger.lots.values() {
             let id = &lot.instrument_id;
-            if rows
-                .get(id.as_str())
+            let k = market.instrument_index(id);
+            if k.and_then(|k| market.find(i, k))
                 .is_some_and(|r| r.corporate_action_gap)
             {
                 return Err(SnapshotError::Gap(
@@ -459,7 +496,7 @@ impl<'a> SnapshotSession<'a> {
                     "close",
                 ));
             }
-            if !next.contains_key(id) {
+            if k.is_none_or(|k| next[k] == 0) {
                 return Err(SnapshotError::Gap(
                     id.clone(),
                     "missing_close".into(),
@@ -472,14 +509,18 @@ impl<'a> SnapshotSession<'a> {
             self.close_dividends(day)?;
         }
         let account = SnapshotAccount::from_ledger(
-            self.ledger.snapshot_with_marks(close, &next)?,
+            self.ledger.valuation(close, &self.held_marks(&next))?,
             self.dividend_receivable,
         )?;
-        // The shared ledger hashes subsequent transitions with the most recent close.
+        // Later ledger transitions start from the most recent close and its marks.
         self.ledger.current_time = close;
         for p in &account.positions {
             let id = &p.instrument_id().0;
-            self.ledger.last_prices.insert(id.clone(), next[id]);
+            // Positions are valued only after every held instrument passed the checks above.
+            let k = market.instrument_index(id).ok_or(SnapshotError::Overflow)?;
+            self.ledger
+                .last_prices
+                .insert(id.clone(), i128::from(next[k]));
             if self.detail {
                 self.out.positions.push(DailyPosition {
                     session: session.into(),
@@ -487,7 +528,7 @@ impl<'a> SnapshotSession<'a> {
                     quantity: p.quantity().units(),
                     sellable_quantity: p.sellable_quantity().units(),
                     market_value: p.market_value().scaled(),
-                    carried_mark: carried.contains(id.as_str()),
+                    carried_mark: carried.binary_search(&k).is_ok(),
                 });
             }
         }
@@ -531,7 +572,7 @@ impl<'a> SnapshotSession<'a> {
 }
 
 pub fn run_snapshot(
-    data: &SnapshotData,
+    data: SnapshotData,
     run: &SnapshotRun,
 ) -> Result<SnapshotResult, SnapshotError> {
     let market = PreparedMarket::new(data)?;

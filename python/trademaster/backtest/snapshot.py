@@ -42,8 +42,13 @@ _FEATURE_FIELDS: list[tuple[str, pa.DataType]] = [
     ("value", pa.float64()),
 ]
 _FEATURES = pa.schema(_FEATURE_FIELDS)
+_RESEARCH = pa.schema([f for f in _FEATURE_FIELDS if f[0] != "version"])
+# The native loader's message when a market file does not hash to its recorded digest.
+_MARKET_DIGEST_MISMATCH = "market snapshot SHA-256 mismatch"
 # pq.write_table's default row-group size; SnapshotWriter cuts row groups at the same rows.
 _FEATURE_ROW_GROUP = 1024 * 1024
+# Feature rows decoded at a time when a snapshot is opened; bounds the transient arrays.
+_FEATURE_BATCH = 256 * 1024
 
 
 def scaled(value: Amount, label: str) -> int:
@@ -81,50 +86,154 @@ def _publish(path: Path, payload: bytes) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def _verified(root: Path, descriptor: dict[str, str]) -> tuple[Path, bytes]:
+def _object_path(root: Path, descriptor: dict[str, str]) -> Path:
     path = (root / descriptor["file"]).resolve()
     if path.parent != root:
         raise ValueError("snapshot object must be inside the snapshot directory")
+    return path
+
+
+def _verified(root: Path, descriptor: dict[str, str]) -> tuple[Path, bytes]:
+    path = _object_path(root, descriptor)
     payload = path.read_bytes()
     if hashlib.sha256(payload).hexdigest() != descriptor["sha256"]:
         raise ValueError(f"snapshot object hash mismatch: {path.name}")
     return path, payload
 
 
-def _adjusted_grid(
-    table: pa.Table,
+def _open_market(root: Path, descriptor: dict[str, str]) -> tuple[Path, Market | Exception]:
+    """Stream the market file into Rust, which verifies its digest as it parses.
+
+    A digest mismatch raises here. A content error is returned instead, so the caller can
+    verify the features object first, as if both digests were checked before parsing.
+    """
+    from trademaster._native import Market
+
+    path = _object_path(root, descriptor)
+    with path.open("rb"):  # Raise the same OSError that reading the whole file would.
+        pass
+    digest = descriptor["sha256"]
+    try:
+        # A recorded digest that is not a string matches nothing, like an unequal hex digest.
+        return path, Market.open(path, digest if isinstance(digest, str) else "")
+    except ValueError as error:
+        if str(error) == _MARKET_DIGEST_MISMATCH:
+            raise ValueError(f"snapshot object hash mismatch: {path.name}") from None
+        return path, error
+    except RuntimeError as error:
+        return path, error
+
+
+def _earliest(
+    where: npt.NDArray[np.bool_],
+    null_time: npt.NDArray[np.bool_],
+    time: npt.NDArray[np.int64],
+    row: npt.NDArray[np.int64],
+) -> int | None:
+    """Index of the first selected row in publication order: (null time, time, file row)."""
+    picked = np.flatnonzero(where)
+    if not len(picked):
+        return None
+    return int(picked[np.lexsort((row[picked], time[picked], null_time[picked]))[0]])
+
+
+def _feature_grids(
+    payload: bytes,
     days: tuple[date, ...],
     symbols: tuple[str, ...],
     close_times: Mapping[date, datetime],
     lo: npt.NDArray[np.int64],
     hi: npt.NDArray[np.int64],
-) -> npt.NDArray[np.float64]:
-    """Scatter adjusted-close features into an instrument-major grid (NaN = missing)."""
+) -> tuple[npt.NDArray[np.float64], pa.Table]:
+    """Scatter adjusted closes into an instrument-major grid (NaN = missing) in one pass.
+
+    The Parquet file is read batch by batch with dictionary-encoded identifiers, so neither
+    the whole table nor a sorted copy is held. Errors are those of a scan in publication
+    order (`available_at`, then file order): any row whose time is not a session close (the
+    earliest one is reported; null times sort last), then any unknown instrument, then any
+    adjusted close outside its listing interval. Research features come back as a table.
+    """
+    if pq.ParquetFile(pa.BufferReader(payload)).schema_arrow != _FEATURES:
+        raise ValueError("snapshot feature schema mismatch")
+    source = pq.ParquetFile(pa.BufferReader(payload), read_dictionary=["instrument_id", "name"])
     grid = np.full((len(symbols), len(days)), np.nan)
-    if not table.num_rows:
-        return grid
-    # Rows are visited in publication order so the first invalid row matches a sequential scan.
-    table = table.sort_by([("available_at", "ascending")])
-    stamps = pa.array(
-        [close_times[d] for d in days], pa.timestamp("us", tz="UTC")
-    )  # positions follow `days`
-    day_index = pc.index_in(table["available_at"], value_set=stamps)
-    if day_index.null_count:
-        first = pc.index(pc.is_null(day_index), True).as_py()
-        raise KeyError(table["available_at"][first].as_py())
-    symbol_index = pc.index_in(table["instrument_id"], value_set=pa.array(symbols, pa.string()))
-    if symbol_index.null_count:
-        first = pc.index(pc.is_null(symbol_index), True).as_py()
-        raise KeyError(table["instrument_id"][first].as_py())
-    rows = symbol_index.to_numpy()
-    cols = day_index.to_numpy()
-    outside = (cols < lo[rows]) | (cols >= hi[rows])
-    if outside.any():
-        first = int(np.argmax(outside))
-        location = (days[cols[first]], symbols[rows[first]])
-        raise ValueError(f"adjusted close outside listing interval: {location}")
-    grid[rows, cols] = table["value"].to_numpy(zero_copy_only=False)
-    return grid
+    stamps = (
+        pa.array([close_times[d] for d in days], pa.timestamp("us", tz="UTC"))
+        .cast(pa.int64())
+        .to_numpy()
+    )
+    by_time = np.argsort(stamps, kind="stable")
+    sorted_stamps = stamps[by_time]
+    known = pa.array(symbols, pa.string())
+    # Earliest offender of each kind: ((null time, time, file row), reported value).
+    first: dict[str, tuple[tuple[bool, int, int], Any]] = {}
+    research: list[pa.RecordBatch] = []
+    offset = 0
+    for batch in source.iter_batches(
+        batch_size=_FEATURE_BATCH, columns=["instrument_id", "name", "available_at", "value"]
+    ):
+        ids = cast("pa.DictionaryArray[Any, Any]", batch.column(0))
+        names = cast("pa.DictionaryArray[Any, Any]", batch.column(1))
+        times = batch.column(2)
+        # Null names are neither adjusted closes nor research features, as in a filter.
+        name_codes = names.indices.fill_null(len(names.dictionary)).to_numpy()
+        adjusted_name = pc.equal(names.dictionary, pa.scalar(_ADJUSTED)).to_numpy(
+            zero_copy_only=False
+        )
+        is_research = np.append(~adjusted_name, False)[name_codes]
+        if is_research.any():
+            selected = batch.filter(pa.array(is_research))
+            research.append(
+                pa.RecordBatch.from_arrays(
+                    [
+                        pc.cast(selected.column(0), pa.string()),
+                        pc.cast(selected.column(1), pa.string()),
+                        selected.column(2),
+                        selected.column(3),
+                    ],
+                    schema=_RESEARCH,
+                )
+            )
+        positions = np.flatnonzero(np.append(adjusted_name, False)[name_codes])
+        if len(positions):
+            null_time = times.is_null().to_numpy(zero_copy_only=False)[positions]
+            t = times.cast(pa.int64()).fill_null(0).to_numpy()[positions]
+            column = np.minimum(np.searchsorted(sorted_stamps, t), len(days) - 1)
+            on_close = (sorted_stamps[column] == t) & ~null_time
+            cols = by_time[column]
+            symbol_of = pc.index_in(ids.dictionary, value_set=known).fill_null(-1).to_numpy()
+            id_codes = ids.indices.fill_null(len(ids.dictionary)).to_numpy()[positions]
+            rows = np.append(symbol_of, -1)[id_codes]
+            valid = on_close & (rows >= 0)
+            outside = np.zeros(len(positions), bool)
+            outside[valid] = (cols[valid] < lo[rows[valid]]) | (cols[valid] >= hi[rows[valid]])
+            file_rows = offset + positions
+            for kind, where in (
+                ("time", ~on_close),
+                ("instrument", on_close & (rows < 0)),
+                ("listing", outside),
+            ):
+                i = _earliest(where, null_time, t, file_rows)
+                if i is None:
+                    continue
+                key = (bool(null_time[i]), int(t[i]), int(file_rows[i]))
+                if kind in first and first[kind][0] <= key:
+                    continue
+                if kind == "listing":
+                    value: Any = (days[cols[i]], symbols[rows[i]])
+                else:
+                    value = batch.column(2 if kind == "time" else 0)[int(positions[i])].as_py()
+                first[kind] = (key, value)
+            values = batch.column(3).to_numpy(zero_copy_only=False)[positions]
+            grid[rows[valid], cols[valid]] = values[valid]
+        offset += batch.num_rows
+    if "time" in first:
+        raise KeyError(first["time"][1])
+    if "instrument" in first:
+        raise KeyError(first["instrument"][1])
+    if "listing" in first:
+        raise ValueError(f"adjusted close outside listing interval: {first['listing'][1]}")
+    return grid, pa.Table.from_batches(research, schema=_RESEARCH)
 
 
 class _HashingWriter:
@@ -495,8 +604,6 @@ class Snapshot:
         With ``history_cache`` (the default), each instrument's close history becomes a cached
         tuple on its first read; pass ``False`` to trade repeated-read speed for lower memory.
         """
-        from trademaster._native import Market
-
         root = Path(directory).resolve()
         manifest = json.loads((root / "manifest.json").read_bytes())
         digest = manifest.pop("snapshot_id")
@@ -505,11 +612,10 @@ class Snapshot:
             or digest != hashlib.sha256(canonical(manifest)).hexdigest()
         ):
             raise ValueError("snapshot manifest hash or schema mismatch")
-        path, content = _verified(root, manifest["market"])
+        path, native = _open_market(root, manifest["market"])
         _, features_bytes = _verified(root, manifest["features"])
-        # Rust parses the market once; Python reads its close grid instead of re-parsing JSON.
-        native = Market(content)
-        del content
+        if isinstance(native, Exception):
+            raise native
         session_text, next_text, symbol_list, close_bytes, observed_bytes = native.price_grid()
         days = tuple(date.fromisoformat(d) for d in session_text)
         indices = {d: i for i, d in enumerate(days)}
@@ -544,22 +650,15 @@ class Snapshot:
                 f"{(days[day_index], symbols[k])}"
             )
         del outside, observed, observed_bytes
-        raw = np.frombuffer(close_bytes, "<i8").reshape(n_symbols, n_days)
-        prices = np.where(raw == 0, np.nan, raw / _SCALE)
-        del raw, close_bytes
+        prices = np.frombuffer(close_bytes, np.float64).reshape(n_symbols, n_days)
+        del close_bytes
         next_session = date.fromisoformat(next_text)
 
-        feature_table = pq.read_table(pa.BufferReader(features_bytes))
+        adjusted, research = _feature_grids(features_bytes, days, symbols, closes, lo, hi)
         del features_bytes
-        if feature_table.schema != _FEATURES:
-            raise ValueError("snapshot feature schema mismatch")
-        is_adjusted = pc.equal(feature_table["name"], pa.scalar(_ADJUSTED))
-        adjusted = _adjusted_grid(feature_table.filter(is_adjusted), days, symbols, closes, lo, hi)
         observations: dict[str, dict[str, tuple[list[datetime], list[float | None]]]] = defaultdict(
             dict
         )
-        research = feature_table.filter(pc.invert(is_adjusted))
-        del feature_table
         research = research.sort_by([("available_at", "ascending")])
         # The verified schema makes these columns non-null except `value`.
         for s, name, t, value in zip(
